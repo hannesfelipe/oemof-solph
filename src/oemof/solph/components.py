@@ -1141,6 +1141,8 @@ class GenericCHPBlock(SimpleBlock):
 
     :math:`\dot{Q}_{CW, min}`       :py:obj:`Q_CW_min[n,t]`         P    minimal therm. condenser
                                                                          load to cooling water
+    :math:`\dot{Q}_{CW, max}`       :py:obj:`Q_CW_max[n,t]`         P    maximal therm. condenser
+                                                                         load to cooling water
     :math:`\dot{H}_{L,FG,min}`      :py:obj:`H_L_FG_min[n,t]`       V    flue gas enthalpy loss
                                                                          at min heat extraction
     :math:`\dot{H}_{L,FG,max}`      :py:obj:`H_L_FG_max[n,t]`       V    flue gas enthalpy loss
@@ -1314,7 +1316,7 @@ class GenericCHPBlock(SimpleBlock):
                        'H_L_FG_share_min', None):
                 expr = 0
                 expr += self.P[n, t] + self.Q[n, t] + self.H_L_FG_min[n, t]
-                expr += list(n.heat_output.values())[0].Q_CW_min[t] \
+                expr += list(n.heat_output.values())[0].Q_CW_max[t] \
                     * self.Y[n, t]
                 expr += - self.H_F[n, t]
                 return expr >= 0
