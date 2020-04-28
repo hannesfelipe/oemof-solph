@@ -51,7 +51,24 @@ Overview
 .. |version| image:: https://img.shields.io/pypi/v/oemof.svg
     :alt: PyPI Package latest release
 
-..    :target: https://pypi.org/project/oemof-solph
+`------------------------------------------------------------------------------------------------------------------`
+
+`Restructuring of oemof`
+++++++++++++++++++++++++
+
+The solph library is one of the most used packages of oemof. It has been also one
+of the first libraries, so a lot of people use `oemof` synonym for `oemof.solph`.
+
+As there are more and more libraries we do need a clearer structure.
+
+If you are interested in the whole picture go to the `oemof repository <https://github.com/oemof/oemof>`_. You will find an
+overview over all packages.
+
+If you are searching for the model generator for linear energy models you should go to the `oemof.solph repository <https://github.com/oemof/oemof-solph/tree/dev>`_. The usage will be the same, you only have to install oemof.solph instead of oemof in the future.
+
+`------------------------------------------------------------------------------------------------------------------`
+
+Oemof stands for "Open Energy System Modelling Framework" and provides a free, open source and clearly documented toolbox to analyse energy supply systems. It is developed in Python and designed as a framework with a modular structure containing several packages which communicate through well defined interfaces.
 
 .. |wheel| image:: https://img.shields.io/pypi/wheel/oemof.svg
     :alt: PyPI Wheel
@@ -208,4 +225,3 @@ Note, to combine the coverage data from all the tox environments run:
       - ::
 
             PYTEST_ADDOPTS=--cov-append tox
-
