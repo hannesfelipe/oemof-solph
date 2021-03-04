@@ -16,6 +16,7 @@ SPDX-FileCopyrightText: Uwe Krien <krien@uni-bremen.de>
 SPDX-FileCopyrightText: Simon Hilpert
 SPDX-FileCopyrightText: Cord Kaldemeyer
 SPDX-FileCopyrightText: Stephan Günther
+SPDX-FileCopyrightText: Johannes Kochems (jokochems)
 
 SPDX-License-Identifier: MIT
 
@@ -92,7 +93,7 @@ multiperiod_flow_grouping = groupings.FlowsWithNodes(
 
 def _multiperiodinvestment_grouping(stf):
     if hasattr(stf[2], 'multiperiodinvestment'):
-        if stf[2].multiperiod is not None:
+        if stf[2].multiperiodinvestment is not None:
             return True
     else:
         return False
@@ -118,5 +119,5 @@ nonconvex_flow_grouping = groupings.FlowsWithNodes(
 
 
 GROUPINGS = [constraint_grouping, investment_flow_grouping,
-             multiperiod_flow_grouping,
+             multiperiod_flow_grouping, multiperiodinvestment_flow_grouping,
              standard_flow_grouping, nonconvex_flow_grouping]

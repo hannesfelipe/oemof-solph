@@ -7,6 +7,7 @@ SPDX-FileCopyrightText: Simon Hilpert
 SPDX-FileCopyrightText: Cord Kaldemeyer
 SPDX-FileCopyrightText: gplssm
 SPDX-FileCopyrightText: Patrik Schönfeldt
+SPDX-FileCopyrightText: Johannes Kochems
 
 SPDX-License-Identifier: MIT
 
@@ -23,6 +24,7 @@ from pyomo.opt import SolverFactory
 import blocks
 from oemof.solph import processing
 from oemof.solph.plumbing import sequence
+from oemof.tools import debugging
 
 
 class BaseModel(po.ConcreteModel):
@@ -337,7 +339,7 @@ class Model(BaseModel):
 
 class MultiPeriodModel(BaseModel):
     """ An  energy system model for operational and investment
-    optimization with multi period investment possibility.
+    optimization with multi-period investment possibility.
 
     Parameters
     ----------
@@ -357,7 +359,10 @@ class MultiPeriodModel(BaseModel):
         A set with all timesteps of the given time horizon.
 
     TIMEINDEX :
-        A 2-dim set with all periods, timesteps.
+        A 2 dimensional set with all periods, timesteps. Note that both values
+        are given in strictly ascending order. I.e., the timesteps for the
+        first period don't start over from 0 again, e.g. (1, 8760)
+        could be the first tuple for the first period.
 
     PERIODS :
         A set with all periods
@@ -368,9 +373,12 @@ class MultiPeriodModel(BaseModel):
     **The following basic variables are created**:
 
     flow
-        Flow from source to target indexed by FLOWS, TIMESTEPS.
+        Flow from source to target indexed by FLOWS, TIMEINDEX.
         Note: Bounds of this variable are set depending on attributes of
         the corresponding flow object.
+        Note: It would also be possible to define a flow indexed by FLOWS,
+        TIMESTEPS. This way, some of the adaptions made in the framework
+        for multiperiod modeling would not be needed anymore.
 
     """
     CONSTRAINT_GROUPS = [blocks.MultiPeriodBus, blocks.MultiPeriodTransformer,
@@ -378,7 +386,14 @@ class MultiPeriodModel(BaseModel):
                          blocks.NonConvexFlow, blocks.MultiPeriodFlow,
                          blocks.MultiPeriodInvestmentFlow]
 
-    def __init__(self, energysystem, **kwargs):
+    def __init__(self, energysystem, discount_rate=0.02, **kwargs):
+        self.discount_rate = discount_rate
+        if discount_rate == 0.02:
+            msg = ("By default, a discount_rate of {} is used for a "
+                   "MultiPeriodModel. If you want to use another value, "
+                   "you have to specify the `discount_rate` attribute.")
+            warnings.warn(msg.format(discount_rate),
+                          debugging.SuspiciousUsageWarning)
         super().__init__(energysystem, **kwargs)
 
     def _add_parent_block_sets(self):
