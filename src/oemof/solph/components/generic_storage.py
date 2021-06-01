@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -
 
-"""This module is designed to hold components with their classes and
-associated individual constraints (blocks) and groupings. Therefore this
-module holds the class definition and the block directly located by each other.
+"""
+GenericStorage and associated individual constraints (blocks) and groupings.
 
 SPDX-FileCopyrightText: Uwe Krien <krien@uni-bremen.de>
 SPDX-FileCopyrightText: Simon Hilpert
@@ -19,10 +18,12 @@ SPDX-FileCopyrightText: Johannes Giehl
 SPDX-License-Identifier: MIT
 
 """
+
 from warnings import warn
 
-import numpy as np
 from oemof.network import network
+from oemof.tools import debugging
+from oemof.tools import economics
 from pyomo.core.base.block import SimpleBlock
 from pyomo.environ import Binary
 from pyomo.environ import BuildAction
@@ -33,12 +34,9 @@ from pyomo.environ import Set
 from pyomo.environ import Var
 
 from oemof.solph import network as solph_network
-# TODO: Change back imports!
-# from oemof.solph.options import Investment
-from options import Investment, MultiPeriodInvestment
+from oemof.solph.options import Investment
+from oemof.solph.options import MultiPeriodInvestment
 from oemof.solph.plumbing import sequence as solph_sequence
-from oemof.tools import economics
-from oemof.tools import debugging
 
 
 class GenericStorage(network.Node):
@@ -106,10 +104,11 @@ class GenericStorage(network.Node):
     Note
     ----
     The following sets, variables, constraints and objective parts are created
-     * :py:class:`~oemof.solph.components.GenericStorageBlock` (if no
-       Investment object present)
-     * :py:class:`~oemof.solph.components.GenericInvestmentStorageBlock` (if
-       Investment object present)
+     * :py:class:`~oemof.solph.components.generic_storage.GenericStorageBlock`
+       (if no Investment object present)
+     * :py:class:
+       `~oemof.solph.components.generic_storage.GenericInvestmentStorageBlock`
+       (if Investment object present)
 
     Examples
     --------
@@ -292,9 +291,6 @@ class GenericStorage(network.Node):
             raise AttributeError(e)
 
 
-# Todo: accessed by
-
-
 class GenericStorageBlock(SimpleBlock):
     r"""Storage without an :class:`.Investment` object.
 
@@ -419,6 +415,12 @@ class GenericStorageBlock(SimpleBlock):
             initialize=[n for n in group if n.balanced is True]
         )
 
+        self.STORAGES_WITH_INVEST_FLOW_REL = Set(
+            initialize=[
+                n for n in group if n.invest_relation_input_output is not None
+            ]
+        )
+
         #  ************* VARIABLES *****************************
 
         def _storage_content_bound_rule(block, n, t):
@@ -476,11 +478,11 @@ class GenericStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[0] * m.timeincrement[0]
             expr += (
-                        -m.flow[i[n], n, 0] * n.inflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                -m.flow[i[n], n, 0] * n.inflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             expr += (
-                        m.flow[n, o[n], 0] / n.outflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                m.flow[n, o[n], 0] / n.outflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             return expr == 0
 
         self.balance_first = Constraint(
@@ -506,11 +508,11 @@ class GenericStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[t] * m.timeincrement[t]
             expr += (
-                        -m.flow[i[n], n, t] * n.inflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                -m.flow[i[n], n, t] * n.inflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             expr += (
-                        m.flow[n, o[n], t] / n.outflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                m.flow[n, o[n], t] / n.outflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             return expr == 0
 
         self.balance = Constraint(
@@ -529,6 +531,24 @@ class GenericStorageBlock(SimpleBlock):
 
         self.balanced_cstr = Constraint(
             self.STORAGES_BALANCED, rule=_balanced_storage_rule
+        )
+
+        def _power_coupled(block, n):
+            """
+            Rule definition for constraint to connect the input power
+            and output power
+            """
+            expr = (
+                m.InvestmentFlow.invest[n, o[n]]
+                + m.flows[n, o[n]].investment.existing
+            ) * n.invest_relation_input_output == (
+                m.InvestmentFlow.invest[i[n], n]
+                + m.flows[i[n], n].investment.existing
+            )
+            return expr
+
+        self.power_coupled = Constraint(
+            self.STORAGES_WITH_INVEST_FLOW_REL, rule=_power_coupled
         )
 
     def _objective_expression(self):
@@ -671,6 +691,12 @@ class GenericMultiPeriodStorageBlock(SimpleBlock):
             initialize=[n for n in group if n.balanced is True]
         )
 
+        self.STORAGES_WITH_INVEST_FLOW_REL = Set(
+            initialize=[
+                n for n in group if n.invest_relation_input_output is not None
+            ]
+        )
+
         #  ************* VARIABLES *****************************
 
         def _storage_content_bound_rule(block, n, t):
@@ -728,11 +754,11 @@ class GenericMultiPeriodStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[0] * m.timeincrement[0]
             expr += (
-                        -m.flow[i[n], n, 0, 0] * n.inflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                -m.flow[i[n], n, 0, 0] * n.inflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             expr += (
-                        m.flow[n, o[n], 0, 0] / n.outflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                m.flow[n, o[n], 0, 0] / n.outflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             return expr == 0
 
         self.balance_first = Constraint(
@@ -758,11 +784,11 @@ class GenericMultiPeriodStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[t] * m.timeincrement[t]
             expr += (
-                        -m.flow[i[n], n, p, t] * n.inflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                -m.flow[i[n], n, p, t] * n.inflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             expr += (
-                        m.flow[n, o[n], p, t] / n.outflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                m.flow[n, o[n], p, t] / n.outflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             return expr == 0
 
         self.balance = Constraint(
@@ -782,6 +808,28 @@ class GenericMultiPeriodStorageBlock(SimpleBlock):
 
         self.balanced_cstr = Constraint(
             self.STORAGES_BALANCED, rule=_balanced_storage_rule
+        )
+
+        def _power_coupled(block):
+            """
+            Rule definition for constraint to connect the input power
+            and output power
+            """
+            for n in self.STORAGES_WITH_INVEST_FLOW_REL:
+                for p in m.PERIODS:
+                    expr = (
+                        m.MultiPeriodInvestmentFlow.total[n, o[n], p]
+                    ) * n.invest_relation_input_output == (
+                        m.MultiPeriodInvestmentFlow.total[i[n], n, p]
+                    )
+                    self.power_coupled.add((n, p), expr)
+
+        self.power_coupled = Constraint(
+            self.STORAGES_WITH_INVEST_FLOW_REL,
+            m.PERIODS,
+            noruleinit=True)
+        self.power_coupled_build = BuildAction(
+            rule=_power_coupled
         )
 
     def _objective_expression(self):
@@ -1170,11 +1218,11 @@ class GenericInvestmentStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[0] * m.timeincrement[0]
             expr += (
-                        -m.flow[i[n], n, 0] * n.inflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                -m.flow[i[n], n, 0] * n.inflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             expr += (
-                        m.flow[n, o[n], 0] / n.outflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                m.flow[n, o[n], 0] / n.outflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             return expr == 0
 
         self.balance_first = Constraint(
@@ -1199,11 +1247,11 @@ class GenericInvestmentStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[t] * m.timeincrement[t]
             expr += (
-                        -m.flow[i[n], n, t] * n.inflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                -m.flow[i[n], n, t] * n.inflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             expr += (
-                        m.flow[n, o[n], t] / n.outflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                m.flow[n, o[n], t] / n.outflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             return expr == 0
 
         self.balance = Constraint(
@@ -1226,12 +1274,12 @@ class GenericInvestmentStorageBlock(SimpleBlock):
             and output power
             """
             expr = (
-                       m.InvestmentFlow.invest[n, o[n]]
-                       + m.flows[n, o[n]].investment.existing
-                   ) * n.invest_relation_input_output == (
-                       m.InvestmentFlow.invest[i[n], n]
-                       + m.flows[i[n], n].investment.existing
-                   )
+                m.InvestmentFlow.invest[n, o[n]]
+                + m.flows[n, o[n]].investment.existing
+            ) * n.invest_relation_input_output == (
+                m.InvestmentFlow.invest[i[n], n]
+                + m.flows[i[n], n].investment.existing
+            )
             return expr
 
         self.power_coupled = Constraint(
@@ -1317,9 +1365,9 @@ class GenericInvestmentStorageBlock(SimpleBlock):
             storage.
             """
             return (
-                       n.investment.maximum * self.invest_status[n]
-                       - self.invest[n]
-                   ) >= 0
+                n.investment.maximum * self.invest_status[n]
+                - self.invest[n]
+            ) >= 0
 
         self.limit_max = Constraint(
             self.NON_CONVEX_INVESTSTORAGES, rule=maximum_invest_limit
@@ -1856,8 +1904,8 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
             for n in self.MULTIPERIODINVESTSTORAGES:
                 for p in m.PERIODS:
                     expr = (
-                        self.old[n, p] ==
-                        self.old_end[n, p] + self.old_exo[n, p])
+                        self.old[n, p]
+                        == self.old_end[n, p] + self.old_exo[n, p])
                     self.old_rule.add((n, p), expr)
 
         self.old_rule = Constraint(self.MULTIPERIODINVESTSTORAGES,
@@ -1896,11 +1944,11 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[0] * m.timeincrement[0]
             expr += (
-                        -m.flow[i[n], n, 0, 0] * n.inflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                -m.flow[i[n], n, 0, 0] * n.inflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             expr += (
-                        m.flow[n, o[n], 0, 0] / n.outflow_conversion_factor[0]
-                    ) * m.timeincrement[0]
+                m.flow[n, o[n], 0, 0] / n.outflow_conversion_factor[0]
+            ) * m.timeincrement[0]
             return expr == 0
 
         self.balance_first = Constraint(
@@ -1926,11 +1974,11 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
             )
             expr += n.fixed_losses_absolute[t] * m.timeincrement[t]
             expr += (
-                        -m.flow[i[n], n, p, t] * n.inflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                -m.flow[i[n], n, p, t] * n.inflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             expr += (
-                        m.flow[n, o[n], p, t] / n.outflow_conversion_factor[t]
-                    ) * m.timeincrement[t]
+                m.flow[n, o[n], p, t] / n.outflow_conversion_factor[t]
+            ) * m.timeincrement[t]
             return expr == 0
 
         self.balance = Constraint(
@@ -1967,10 +2015,10 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
             for n in self.INVEST_REL_IN_OUT:
                 for p in m.PERIODS:
                     expr = (
-                               m.MultiPeriodInvestmentFlow.total[n, o[n], p]
-                           ) * n.invest_relation_input_output == (
-                               m.MultiPeriodInvestmentFlow.total[i[n], n, p]
-                           )
+                        m.MultiPeriodInvestmentFlow.total[n, o[n], p]
+                    ) * n.invest_relation_input_output == (
+                        m.MultiPeriodInvestmentFlow.total[i[n], n, p]
+                    )
                     self.power_coupled.add((n, p), expr)
 
         self.power_coupled = Constraint(
@@ -2073,9 +2121,9 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
             multiperiodinvestment storage.
             """
             return (
-                       n.multiperiodinvestment.maximum[p]
-                       * self.invest_status[n, p] - self.invest[n, p]
-                   ) >= 0
+                n.multiperiodinvestment.maximum[p]
+                * self.invest_status[n, p] - self.invest[n, p]
+            ) >= 0
 
         self.limit_max = Constraint(
             self.NON_CONVEX_MULTIPERIODINVESTSTORAGES,
@@ -2112,9 +2160,10 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
             """
             for n in self.OVERALL_MAXIMUM_MULTIPERIODINVESTSTORAGES:
                 for p in m.PERIODS:
-                    expr = (self.total[n, p] <=
-                            n.multiperiodinvestment.overall_maximum)
+                    expr = (self.total[n, p]
+                            <= n.multiperiodinvestment.overall_maximum)
                     self.overall_storage_maximum.add((n, p), expr)
+
         self.overall_storage_maximum = Constraint(
             self.OVERALL_MAXIMUM_MULTIPERIODINVESTSTORAGES,
             m.PERIODS,
@@ -2131,6 +2180,7 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
                     expr = (n.multiperiodinvestment.overall_minimum
                             <= self.total[n, p])
                     self.overall_minimum.add((n, p), expr)
+
         self.overall_minimum = Constraint(
             self.OVERALL_MINIMUM_MULTIPERIODINVESTSTORAGES,
             m.PERIODS,
@@ -2189,8 +2239,8 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
                         wacc=interest)
                     investment_costs += (
                         (self.invest[n, p] * annuity * lifetime
-                         + self.invest_status[n, p] *
-                         n.multiperiodinvestment.offset[p])
+                         + self.invest_status[n, p]
+                         * n.multiperiodinvestment.offset[p])
                         * ((1 + m.discount_rate) ** (-p))
                     )
 
@@ -2207,809 +2257,6 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
                         * ((1 + m.discount_rate) ** (-p))
                     )
 
+        self.investment_costs = investment_costs
         self.costs = Expression(expr=investment_costs + fixed_costs)
-
-        return investment_costs + fixed_costs
-
-
-class GenericCHP(network.Transformer):
-    r"""
-    Component `GenericCHP` to model combined heat and power plants.
-
-    Can be used to model (combined cycle) extraction or back-pressure turbines
-    and used a mixed-integer linear formulation. Thus, it induces more
-    computational effort than the `ExtractionTurbineCHP` for the
-    benefit of higher accuracy.
-
-    The full set of equations is described in:
-    Mollenhauer, E., Christidis, A. & Tsatsaronis, G.
-    Evaluation of an energy- and exergy-based generic modeling
-    approach of combined heat and power plants
-    Int J Energy Environ Eng (2016) 7: 167.
-    https://doi.org/10.1007/s40095-016-0204-6
-
-    For a general understanding of (MI)LP CHP representation, see:
-    Fabricio I. Salgado, P.
-    Short - Term Operation Planning on Cogeneration Systems: A Survey
-    Electric Power Systems Research (2007)
-    Electric Power Systems Research
-    Volume 78, Issue 5, May 2008, Pages 835-848
-    https://doi.org/10.1016/j.epsr.2007.06.001
-
-    Note
-    ----
-    An adaption for the flow parameter `H_L_FG_share_max` has been made to
-    set the flue gas losses at maximum heat extraction `H_L_FG_max` as share of
-    the fuel flow `H_F` e.g. for combined cycle extraction turbines.
-    The flow parameter `H_L_FG_share_min` can be used to set the flue gas
-    losses at minimum heat extraction `H_L_FG_min` as share of
-    the fuel flow `H_F` e.g. for motoric CHPs.
-    The boolean component parameter `back_pressure` can be set to model
-    back-pressure characteristics.
-
-    Also have a look at the examples on how to use it.
-
-    Parameters
-    ----------
-    fuel_input : dict
-        Dictionary with key-value-pair of `oemof.Bus` and `oemof.Flow` object
-        for the fuel input.
-    electrical_output : dict
-        Dictionary with key-value-pair of `oemof.Bus` and `oemof.Flow` object
-        for the electrical output. Related parameters like `P_max_woDH` are
-        passed as attributes of the `oemof.Flow` object.
-    heat_output : dict
-        Dictionary with key-value-pair of `oemof.Bus` and `oemof.Flow` object
-        for the heat output. Related parameters like `Q_CW_min` are passed as
-        attributes of the `oemof.Flow` object.
-    Beta : list of numerical values
-        Beta values in same dimension as all other parameters (length of
-        optimization period).
-    back_pressure : boolean
-        Flag to use back-pressure characteristics. Set to `True` and
-        `Q_CW_min` to zero for back-pressure turbines. See paper above for more
-        information.
-
-    Note
-    ----
-    The following sets, variables, constraints and objective parts are created
-     * :py:class:`~oemof.solph.components.GenericCHPBlock`
-
-    Examples
-    --------
-    >>> from oemof import solph
-    >>> bel = solph.Bus(label='electricityBus')
-    >>> bth = solph.Bus(label='heatBus')
-    >>> bgas = solph.Bus(label='commodityBus')
-    >>> ccet = solph.components.GenericCHP(
-    ...    label='combined_cycle_extraction_turbine',
-    ...    fuel_input={bgas: solph.Flow(
-    ...        H_L_FG_share_max=[0.183])},
-    ...    electrical_output={bel: solph.Flow(
-    ...        P_max_woDH=[155.946],
-    ...        P_min_woDH=[68.787],
-    ...        Eta_el_max_woDH=[0.525],
-    ...        Eta_el_min_woDH=[0.444])},
-    ...    heat_output={bth: solph.Flow(
-    ...        Q_CW_min=[10.552])},
-    ...    Beta=[0.122], back_pressure=False)
-    >>> type(ccet)
-    <class 'oemof.solph.components.GenericCHP'>
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        self.fuel_input = kwargs.get("fuel_input")
-        self.electrical_output = kwargs.get("electrical_output")
-        self.heat_output = kwargs.get("heat_output")
-        self.Beta = solph_sequence(kwargs.get("Beta"))
-        self.back_pressure = kwargs.get("back_pressure")
-        self._alphas = None
-
-        # map specific flows to standard API
-        fuel_bus = list(self.fuel_input.keys())[0]
-        fuel_flow = list(self.fuel_input.values())[0]
-        fuel_bus.outputs.update({self: fuel_flow})
-
-        self.outputs.update(kwargs.get("electrical_output"))
-        self.outputs.update(kwargs.get("heat_output"))
-
-    def _calculate_alphas(self):
-        """
-        Calculate alpha coefficients.
-
-        A system of linear equations is created from passed capacities and
-        efficiencies and solved to calculate both coefficients.
-        """
-        alphas = [[], []]
-
-        eb = list(self.electrical_output.keys())[0]
-
-        attrs = [
-            self.electrical_output[eb].P_min_woDH,
-            self.electrical_output[eb].Eta_el_min_woDH,
-            self.electrical_output[eb].P_max_woDH,
-            self.electrical_output[eb].Eta_el_max_woDH,
-        ]
-
-        length = [len(a) for a in attrs if not isinstance(a, (int, float))]
-        max_length = max(length)
-
-        if all(len(a) == max_length for a in attrs):
-            if max_length == 0:
-                max_length += 1  # increment dimension for scalars from 0 to 1
-            for i in range(0, max_length):
-                A = np.array(
-                    [
-                        [1, self.electrical_output[eb].P_min_woDH[i]],
-                        [1, self.electrical_output[eb].P_max_woDH[i]],
-                    ]
-                )
-                b = np.array(
-                    [
-                        self.electrical_output[eb].P_min_woDH[i]
-                        / self.electrical_output[eb].Eta_el_min_woDH[i],
-                        self.electrical_output[eb].P_max_woDH[i]
-                        / self.electrical_output[eb].Eta_el_max_woDH[i],
-                    ]
-                )
-                x = np.linalg.solve(A, b)
-                alphas[0].append(x[0])
-                alphas[1].append(x[1])
-        else:
-            error_message = (
-                "Attributes to calculate alphas "
-                + "must be of same dimension."
-            )
-            raise ValueError(error_message)
-
-        self._alphas = alphas
-
-    @property
-    def alphas(self):
-        """Compute or return the _alphas attribute."""
-        if self._alphas is None:
-            self._calculate_alphas()
-        return self._alphas
-
-    def constraint_group(self):
-        return GenericCHPBlock
-
-
-class GenericCHPBlock(SimpleBlock):
-    r"""
-    Block for the relation of the :math:`n` nodes with
-    type class:`.GenericCHP`.
-
-    **The following constraints are created:**
-
-    .. _GenericCHP-equations1-10:
-
-    .. math::
-        &
-        (1)\qquad \dot{H}_F(t) = fuel\ input \\
-        &
-        (2)\qquad \dot{Q}(t) = heat\ output \\
-        &
-        (3)\qquad P_{el}(t) = power\ output\\
-        &
-        (4)\qquad \dot{H}_F(t) = \alpha_0(t) \cdot Y(t) + \alpha_1(t) \cdot
-        P_{el,woDH}(t)\\
-        &
-        (5)\qquad \dot{H}_F(t) = \alpha_0(t) \cdot Y(t) + \alpha_1(t) \cdot
-        ( P_{el}(t) + \beta \cdot \dot{Q}(t) )\\
-        &
-        (6)\qquad \dot{H}_F(t) \leq Y(t) \cdot
-        \frac{P_{el, max, woDH}(t)}{\eta_{el,max,woDH}(t)}\\
-        &
-        (7)\qquad \dot{H}_F(t) \geq Y(t) \cdot
-        \frac{P_{el, min, woDH}(t)}{\eta_{el,min,woDH}(t)}\\
-        &
-        (8)\qquad \dot{H}_{L,FG,max}(t) = \dot{H}_F(t) \cdot
-        \dot{H}_{L,FG,sharemax}(t)\\
-        &
-        (9)\qquad \dot{H}_{L,FG,min}(t) = \dot{H}_F(t) \cdot
-        \dot{H}_{L,FG,sharemin}(t)\\
-        &
-        (10)\qquad P_{el}(t) + \dot{Q}(t) + \dot{H}_{L,FG,max}(t) +
-        \dot{Q}_{CW, min}(t) \cdot Y(t) = / \leq \dot{H}_F(t)\\
-
-    where :math:`= / \leq` depends on the CHP being back pressure or not.
-
-    The coefficients :math:`\alpha_0` and :math:`\alpha_1`
-    can be determined given the efficiencies maximal/minimal load:
-
-    .. math::
-        &
-        \eta_{el,max,woDH}(t) = \frac{P_{el,max,woDH}(t)}{\alpha_0(t)
-        \cdot Y(t) + \alpha_1(t) \cdot P_{el,max,woDH}(t)}\\
-        &
-        \eta_{el,min,woDH}(t) = \frac{P_{el,min,woDH}(t)}{\alpha_0(t)
-        \cdot Y(t) + \alpha_1(t) \cdot P_{el,min,woDH}(t)}\\
-
-
-    **For the attribute** :math:`\dot{H}_{L,FG,min}` **being not None**,
-    e.g. for a motoric CHP, **the following is created:**
-
-        **Constraint:**
-
-    .. _GenericCHP-equations11:
-
-    .. math::
-        &
-        (11)\qquad P_{el}(t) + \dot{Q}(t) + \dot{H}_{L,FG,min}(t) +
-        \dot{Q}_{CW, min}(t) \cdot Y(t) \geq \dot{H}_F(t)\\[10pt]
-
-    The symbols used are defined as follows (with Variables (V) and Parameters (P)):
-
-    =============================== =============================== ==== =======================
-    math. symbol                    attribute                       type explanation
-    =============================== =============================== ==== =======================
-    :math:`\dot{H}_{F}`             :py:obj:`H_F[n,t]`              V    input of enthalpy
-                                                                         through fuel input
-    :math:`P_{el}`                  :py:obj:`P[n,t]`                V    provided
-                                                                         electric power
-    :math:`P_{el,woDH}`             :py:obj:`P_woDH[n,t]`           V    electric power without
-                                                                         district heating
-    :math:`P_{el,min,woDH}`         :py:obj:`P_min_woDH[n,t]`       P    min. electric power
-                                                                         without district heating
-    :math:`P_{el,max,woDH}`         :py:obj:`P_max_woDH[n,t]`       P    max. electric power
-                                                                         without district heating
-    :math:`\dot{Q}`                 :py:obj:`Q[n,t]`                V    provided heat
-
-    :math:`\dot{Q}_{CW, min}`       :py:obj:`Q_CW_min[n,t]`         P    minimal therm. condenser
-                                                                         load to cooling water
-    :math:`\dot{H}_{L,FG,min}`      :py:obj:`H_L_FG_min[n,t]`       V    flue gas enthalpy loss
-                                                                         at min heat extraction
-    :math:`\dot{H}_{L,FG,max}`      :py:obj:`H_L_FG_max[n,t]`       V    flue gas enthalpy loss
-                                                                         at max heat extraction
-    :math:`\dot{H}_{L,FG,sharemin}` :py:obj:`H_L_FG_share_min[n,t]` P    share of flue gas loss
-                                                                         at min heat extraction
-    :math:`\dot{H}_{L,FG,sharemax}` :py:obj:`H_L_FG_share_max[n,t]` P    share of flue gas loss
-                                                                         at max heat extraction
-    :math:`Y`                       :py:obj:`Y[n,t]`                V    status variable
-                                                                         on/off
-    :math:`\alpha_0`                :py:obj:`n.alphas[0][n,t]`      P    coefficient
-                                                                         describing efficiency
-    :math:`\alpha_1`                :py:obj:`n.alphas[1][n,t]`      P    coefficient
-                                                                         describing efficiency
-    :math:`\beta`                   :py:obj:`Beta[n,t]`             P    power loss index
-
-    :math:`\eta_{el,min,woDH}`      :py:obj:`Eta_el_min_woDH[n,t]`  P    el. eff. at min. fuel
-                                                                         flow w/o distr. heating
-    :math:`\eta_{el,max,woDH}`      :py:obj:`Eta_el_max_woDH[n,t]`  P    el. eff. at max. fuel
-                                                                         flow w/o distr. heating
-    =============================== =============================== ==== =======================
-
-    """  # noqa: E501
-    CONSTRAINT_GROUP = True
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def _create(self, group=None):
-        """
-        Create constraints for GenericCHPBlock.
-
-        Parameters
-        ----------
-        group : list
-            List containing `GenericCHP` objects.
-            e.g. groups=[ghcp1, gchp2,..]
-        """
-        m = self.parent_block()
-
-        if group is None:
-            return None
-
-        self.GENERICCHPS = Set(initialize=[n for n in group])
-
-        # variables
-        self.H_F = Var(self.GENERICCHPS, m.TIMESTEPS, within=NonNegativeReals)
-        self.H_L_FG_max = Var(
-            self.GENERICCHPS, m.TIMESTEPS, within=NonNegativeReals
-        )
-        self.H_L_FG_min = Var(
-            self.GENERICCHPS, m.TIMESTEPS, within=NonNegativeReals
-        )
-        self.P_woDH = Var(
-            self.GENERICCHPS, m.TIMESTEPS, within=NonNegativeReals
-        )
-        self.P = Var(self.GENERICCHPS, m.TIMESTEPS, within=NonNegativeReals)
-        self.Q = Var(self.GENERICCHPS, m.TIMESTEPS, within=NonNegativeReals)
-        self.Y = Var(self.GENERICCHPS, m.TIMESTEPS, within=Binary)
-
-        # constraint rules
-        def _H_flow_rule(block, n, t):
-            """Link fuel consumption to component inflow."""
-            expr = 0
-            expr += self.H_F[n, t]
-            expr += -m.flow[list(n.fuel_input.keys())[0], n, t]
-            return expr == 0
-
-        self.H_flow = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_H_flow_rule
-        )
-
-        def _Q_flow_rule(block, n, t):
-            """Link heat flow to component outflow."""
-            expr = 0
-            expr += self.Q[n, t]
-            expr += -m.flow[n, list(n.heat_output.keys())[0], t]
-            return expr == 0
-
-        self.Q_flow = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_Q_flow_rule
-        )
-
-        def _P_flow_rule(block, n, t):
-            """Link power flow to component outflow."""
-            expr = 0
-            expr += self.P[n, t]
-            expr += -m.flow[n, list(n.electrical_output.keys())[0], t]
-            return expr == 0
-
-        self.P_flow = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_P_flow_rule
-        )
-
-        def _H_F_1_rule(block, n, t):
-            """Set P_woDH depending on H_F."""
-            expr = 0
-            expr += -self.H_F[n, t]
-            expr += n.alphas[0][t] * self.Y[n, t]
-            expr += n.alphas[1][t] * self.P_woDH[n, t]
-            return expr == 0
-
-        self.H_F_1 = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_H_F_1_rule
-        )
-
-        def _H_F_2_rule(block, n, t):
-            """Determine relation between H_F, P and Q."""
-            expr = 0
-            expr += -self.H_F[n, t]
-            expr += n.alphas[0][t] * self.Y[n, t]
-            expr += n.alphas[1][t] * (self.P[n, t] + n.Beta[t] * self.Q[n, t])
-            return expr == 0
-
-        self.H_F_2 = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_H_F_2_rule
-        )
-
-        def _H_F_3_rule(block, n, t):
-            """Set upper value of operating range via H_F."""
-            expr = 0
-            expr += self.H_F[n, t]
-            expr += -self.Y[n, t] * (
-                list(n.electrical_output.values())[0].P_max_woDH[t]
-                / list(n.electrical_output.values())[0].Eta_el_max_woDH[t]
-            )
-            return expr <= 0
-
-        self.H_F_3 = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_H_F_3_rule
-        )
-
-        def _H_F_4_rule(block, n, t):
-            """Set lower value of operating range via H_F."""
-            expr = 0
-            expr += self.H_F[n, t]
-            expr += -self.Y[n, t] * (
-                list(n.electrical_output.values())[0].P_min_woDH[t]
-                / list(n.electrical_output.values())[0].Eta_el_min_woDH[t]
-            )
-            return expr >= 0
-
-        self.H_F_4 = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_H_F_4_rule
-        )
-
-        def _H_L_FG_max_rule(block, n, t):
-            """Set max. flue gas loss as share fuel flow share."""
-            expr = 0
-            expr += -self.H_L_FG_max[n, t]
-            expr += (
-                self.H_F[n, t]
-                * list(n.fuel_input.values())[0].H_L_FG_share_max[t]
-            )
-            return expr == 0
-
-        self.H_L_FG_max_def = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_H_L_FG_max_rule
-        )
-
-        def _Q_max_res_rule(block, n, t):
-            """Set maximum Q depending on fuel and electrical flow."""
-            expr = 0
-            expr += self.P[n, t] + self.Q[n, t] + self.H_L_FG_max[n, t]
-            expr += list(n.heat_output.values())[0].Q_CW_min[t] * self.Y[n, t]
-            expr += -self.H_F[n, t]
-            # back-pressure characteristics or one-segment model
-            if n.back_pressure is True:
-                return expr == 0
-            else:
-                return expr <= 0
-
-        self.Q_max_res = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_Q_max_res_rule
-        )
-
-        def _H_L_FG_min_rule(block, n, t):
-            """Set min. flue gas loss as fuel flow share."""
-            # minimum flue gas losses e.g. for motoric CHPs
-            if getattr(
-                list(n.fuel_input.values())[0], "H_L_FG_share_min", None
-            ):
-                expr = 0
-                expr += -self.H_L_FG_min[n, t]
-                expr += (
-                    self.H_F[n, t]
-                    * list(n.fuel_input.values())[0].H_L_FG_share_min[t]
-                )
-                return expr == 0
-            else:
-                return Constraint.Skip
-
-        self.H_L_FG_min_def = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_H_L_FG_min_rule
-        )
-
-        def _Q_min_res_rule(block, n, t):
-            """Set minimum Q depending on fuel and eletrical flow."""
-            # minimum restriction for heat flows e.g. for motoric CHPs
-            if getattr(
-                list(n.fuel_input.values())[0], "H_L_FG_share_min", None
-            ):
-                expr = 0
-                expr += self.P[n, t] + self.Q[n, t] + self.H_L_FG_min[n, t]
-                expr += (
-                    list(n.heat_output.values())[0].Q_CW_min[t] * self.Y[n, t]
-                )
-                expr += -self.H_F[n, t]
-                return expr >= 0
-            else:
-                return Constraint.Skip
-
-        self.Q_min_res = Constraint(
-            self.GENERICCHPS, m.TIMESTEPS, rule=_Q_min_res_rule
-        )
-
-    def _objective_expression(self):
-        r"""Objective expression for generic CHPs with no investment.
-
-        Note: This adds nothing as variable costs are already
-        added in the Block :class:`Flow`.
-        """
-        if not hasattr(self, "GENERICCHPS"):
-            return 0
-
-        return 0
-
-
-class ExtractionTurbineCHP(solph_network.Transformer):
-    r"""
-    A CHP with an extraction turbine in a linear model. For more options see
-    the :class:`~oemof.solph.components.GenericCHP` class.
-
-    One main output flow has to be defined and is tapped by the remaining flow.
-    The conversion factors have to be defined for the maximum tapped flow (
-    full CHP mode) and for no tapped flow (full condensing mode). Even though
-    it is possible to limit the variability of the tapped flow, so that the
-    full condensing mode will never be reached.
-
-    Parameters
-    ----------
-    conversion_factors : dict
-        Dictionary containing conversion factors for conversion of inflow
-        to specified outflow. Keys are output bus objects.
-        The dictionary values can either be a scalar or a sequence with length
-        of time horizon for simulation.
-    conversion_factor_full_condensation : dict
-        The efficiency of the main flow if there is no tapped flow. Only one
-        key is allowed. Use one of the keys of the conversion factors. The key
-        indicates the main flow. The other output flow is the tapped flow.
-
-    Note
-    ----
-    The following sets, variables, constraints and objective parts are created
-     * :py:class:`~oemof.solph.components.ExtractionTurbineCHPBlock`
-
-    Examples
-    --------
-    >>> from oemof import solph
-    >>> bel = solph.Bus(label='electricityBus')
-    >>> bth = solph.Bus(label='heatBus')
-    >>> bgas = solph.Bus(label='commodityBus')
-    >>> et_chp = solph.components.ExtractionTurbineCHP(
-    ...    label='variable_chp_gas',
-    ...    inputs={bgas: solph.Flow(nominal_value=10e10)},
-    ...    outputs={bel: solph.Flow(), bth: solph.Flow()},
-    ...    conversion_factors={bel: 0.3, bth: 0.5},
-    ...    conversion_factor_full_condensation={bel: 0.5})
-    """
-
-    def __init__(self, conversion_factor_full_condensation, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.conversion_factor_full_condensation = {
-            k: solph_sequence(v)
-            for k, v in conversion_factor_full_condensation.items()
-        }
-
-    def constraint_group(self):
-        return ExtractionTurbineCHPBlock
-
-
-class ExtractionTurbineCHPBlock(SimpleBlock):
-    r"""Block for the linear relation of nodes with type
-    :class:`~oemof.solph.components.ExtractionTurbineCHP`
-
-    **The following two constraints are created:**
-
-    .. _ETCHP-equations:
-
-        .. math::
-            &
-            (1)\dot H_{Fuel}(t) =
-               \frac{P_{el}(t) + \dot Q_{th}(t) \cdot \beta(t)}
-                 {\eta_{el,woExtr}(t)} \\
-            &
-            (2)P_{el}(t) \geq \dot Q_{th}(t) \cdot C_b =
-               \dot Q_{th}(t) \cdot
-               \frac{\eta_{el,maxExtr}(t)}
-                 {\eta_{th,maxExtr}(t)}
-
-    where :math:`\beta` is defined as:
-
-         .. math::
-            \beta(t) = \frac{\eta_{el,woExtr}(t) -
-            \eta_{el,maxExtr}(t)}{\eta_{th,maxExtr}(t)}
-
-    where the first equation is the result of the relation between the input
-    flow and the two output flows, the second equation stems from how the two
-    output flows relate to each other, and the symbols used are defined as
-    follows (with Variables (V) and Parameters (P)):
-
-    ========================= ==================================================== ==== =========
-    symbol                    attribute                                            type explanation
-    ========================= ==================================================== ==== =========
-    :math:`\dot H_{Fuel}`     :py:obj:`flow[i, n, t]`                              V    fuel input flow
-
-    :math:`P_{el}`            :py:obj:`flow[n, main_output, t]`                    V    electric power
-
-    :math:`\dot Q_{th}`       :py:obj:`flow[n, tapped_output, t]`                  V    thermal output
-
-    :math:`\beta`             :py:obj:`main_flow_loss_index[n, t]`                 P    power loss index
-
-    :math:`\eta_{el,woExtr}`  :py:obj:`conversion_factor_full_condensation[n, t]`  P    electric efficiency
-                                                                                        without heat extraction
-    :math:`\eta_{el,maxExtr}` :py:obj:`conversion_factors[main_output][n, t]`      P    electric efficiency
-                                                                                        with max heat extraction
-    :math:`\eta_{th,maxExtr}` :py:obj:`conversion_factors[tapped_output][n, t]`    P    thermal efficiency with
-                                                                                        maximal heat extraction
-    ========================= ==================================================== ==== =========
-
-    """  # noqa: E501
-
-    CONSTRAINT_GROUP = True
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def _create(self, group=None):
-        """Creates the linear constraint for the
-        :class:`oemof.solph.Transformer` block.
-
-        Parameters
-        ----------
-        group : list
-            List of :class:`oemof.solph.ExtractionTurbineCHP` (trsf) objects
-            for which the linear relation of inputs and outputs is created
-            e.g. group = [trsf1, trsf2, trsf3, ...]. Note that the relation
-            is created for all existing relations of the inputs and all outputs
-            of the transformer. The components inside the list need to hold
-            all needed attributes.
-        """
-        if group is None:
-            return None
-
-        m = self.parent_block()
-
-        for n in group:
-            n.inflow = list(n.inputs)[0]
-            n.main_flow = [
-                k for k, v in n.conversion_factor_full_condensation.items()
-            ][0]
-            n.main_output = [o for o in n.outputs if n.main_flow == o][0]
-            n.tapped_output = [o for o in n.outputs if n.main_flow != o][0]
-            n.conversion_factor_full_condensation_sq = (
-                n.conversion_factor_full_condensation[n.main_output]
-            )
-            n.flow_relation_index = [
-                n.conversion_factors[n.main_output][t]
-                / n.conversion_factors[n.tapped_output][t]
-                for t in m.TIMESTEPS
-            ]
-            n.main_flow_loss_index = [
-                (
-                    n.conversion_factor_full_condensation_sq[t]
-                    - n.conversion_factors[n.main_output][t]
-                )
-                / n.conversion_factors[n.tapped_output][t]
-                for t in m.TIMESTEPS
-            ]
-
-        def _input_output_relation_rule(block):
-            """Connection between input, main output and tapped output."""
-            for t in m.TIMESTEPS:
-                for g in group:
-                    lhs = m.flow[g.inflow, g, t]
-                    rhs = (
-                              m.flow[g, g.main_output, t]
-                              + m.flow[g, g.tapped_output, t]
-                              * g.main_flow_loss_index[t]
-                          ) / g.conversion_factor_full_condensation_sq[t]
-                    block.input_output_relation.add((g, t), (lhs == rhs))
-
-        self.input_output_relation = Constraint(
-            group, m.TIMESTEPS, noruleinit=True
-        )
-        self.input_output_relation_build = BuildAction(
-            rule=_input_output_relation_rule
-        )
-
-        def _out_flow_relation_rule(block):
-            """Relation between main and tapped output in full chp mode."""
-            for t in m.TIMESTEPS:
-                for g in group:
-                    lhs = m.flow[g, g.main_output, t]
-                    rhs = (
-                        m.flow[g, g.tapped_output, t]
-                        * g.flow_relation_index[t]
-                    )
-                    block.out_flow_relation.add((g, t), (lhs >= rhs))
-
-        self.out_flow_relation = Constraint(
-            group, m.TIMESTEPS, noruleinit=True
-        )
-        self.out_flow_relation_build = BuildAction(
-            rule=_out_flow_relation_rule
-        )
-
-
-class OffsetTransformer(network.Transformer):
-    """An object with one input and one output.
-
-    Parameters
-    ----------
-
-    coefficients : tuple
-        Tuple containing the first two polynomial coefficients
-        i.e. the y-intersection and slope of a linear equation.
-        The tuple values can either be a scalar or a sequence with length
-        of time horizon for simulation.
-
-    Notes
-    -----
-    The sets, variables, constraints and objective parts are created
-     * :py:class:`~oemof.solph.components.OffsetTransformerBlock`
-
-    Examples
-    --------
-
-    >>> from oemof import solph
-
-    >>> bel = solph.Bus(label='bel')
-    >>> bth = solph.Bus(label='bth')
-
-    >>> ostf = solph.components.OffsetTransformer(
-    ...    label='ostf',
-    ...    inputs={bel: solph.Flow(
-    ...        nominal_value=60, min=0.5, max=1.0,
-    ...        nonconvex=solph.NonConvex())},
-    ...    outputs={bth: solph.Flow()},
-    ...    coefficients=(20, 0.5))
-
-    >>> type(ostf)
-    <class 'oemof.solph.components.OffsetTransformer'>
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        if kwargs.get("coefficients") is not None:
-            self.coefficients = tuple(
-                [solph_sequence(i) for i in kwargs.get("coefficients")]
-            )
-            if len(self.coefficients) != 2:
-                raise ValueError(
-                    "Two coefficients or coefficient series have to be given."
-                )
-
-        if len(self.inputs) == 1:
-            for k, v in self.inputs.items():
-                if not v.nonconvex:
-                    raise TypeError(
-                        "Input flows must be of type NonConvexFlow!"
-                    )
-
-        if len(self.inputs) > 1 or len(self.outputs) > 1:
-            raise ValueError(
-                "Component `OffsetTransformer` must not have "
-                + "more than 1 input and 1 output!"
-            )
-
-    def constraint_group(self):
-        return OffsetTransformerBlock
-
-
-class OffsetTransformerBlock(SimpleBlock):
-    r"""Block for the relation of nodes with type
-    :class:`~oemof.solph.components.OffsetTransformer`
-
-    **The following constraints are created:**
-
-    .. _OffsetTransformer-equations:
-
-    .. math::
-        &
-        P_{out}(t) = C_1(t) \cdot P_{in}(t) + C_0(t) \cdot Y(t) \\
-
-
-    .. csv-table:: Variables (V) and Parameters (P)
-        :header: "symbol", "attribute", "type", "explanation"
-        :widths: 1, 1, 1, 1
-
-        ":math:`P_{out}(t)`", ":py:obj:`flow[n, o, t]`", "V", "Power of output"
-        ":math:`P_{in}(t)`", ":py:obj:`flow[i, n, t]`", "V","Power of input"
-        ":math:`Y(t)`", ":py:obj:`status[i, n, t]`", "V","binary
-        status variable of nonconvex input flow "
-        ":math:`C_1(t)`", ":py:obj:`coefficients[1][n, t]`", "P", "linear
-        coefficient 1 (slope)"
-        ":math:`C_0(t)`", ":py:obj:`coefficients[0][n, t]`", "P", "linear
-        coefficient 0 (y-intersection)"
-
-
-    """
-
-    CONSTRAINT_GROUP = True
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    def _create(self, group=None):
-        """Creates the relation for the class:`OffsetTransformer`.
-
-        Parameters
-        ----------
-        group : list
-            List of oemof.solph.custom.OffsetTransformer objects for which
-            the relation of inputs and outputs is created
-            e.g. group = [ostf1, ostf2, ostf3, ...]. The components inside
-            the list need to hold an attribute `coefficients` of type dict
-            containing the conversion factors for all inputs to outputs.
-        """
-        if group is None:
-            return None
-
-        m = self.parent_block()
-
-        self.OFFSETTRANSFORMERS = Set(initialize=[n for n in group])
-
-        def _relation_rule(block, n, t):
-            """Link binary input and output flow to component outflow."""
-            expr = 0
-            expr += -m.flow[n, list(n.outputs.keys())[0], t]
-            expr += (
-                m.flow[list(n.inputs.keys())[0], n, t] * n.coefficients[1][t]
-            )
-            expr += (
-                m.NonConvexFlow.status[list(n.inputs.keys())[0], n, t]
-                * n.coefficients[0][t]
-            )
-            return expr == 0
-
-        self.relation = Constraint(
-            self.OFFSETTRANSFORMERS, m.TIMESTEPS, rule=_relation_rule
-        )
+        return self.costs

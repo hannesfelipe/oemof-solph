@@ -199,13 +199,14 @@ class MultiPeriodInvestment:
             raise AttributeError(e1)
 
     def _check_invest_attributes_maximum(self):
-        if (self.maximum == float('+inf')) and (self.nonconvex is True):
-            e2 = ("Please provide an maximum investment value in case of"
-                  " nonconvex investment (nonconvex=True), which is in the"
-                  " expected magnitude."
-                  " \nVery high maximum values (> 10e8) as maximum investment"
-                  " limit might lead to numeric issues, so that no investment"
-                  " is done, although it is the optimal solution!")
+        if (self.maximum == sequence(float('+inf'))
+                and (self.nonconvex is True)):
+            e2 = ("Please provide an maximum investment value in case of "
+                  "nonconvex investment, which is in the "
+                  "expected magnitude.\n"
+                  "Very high maximum values as maximum investment "
+                  "limit might lead to numeric issues, so that no investment "
+                  "is done, although it is the optimal solution!")
             raise AttributeError(e2)
 
     def _check_invest_attributes_offset(self):
@@ -215,8 +216,8 @@ class MultiPeriodInvestment:
             raise AttributeError(e3)
 
     def _check_age_and_lifetime(self):
-        if self.age > self.lifetime:
-            e4 = ("A unit's age must be smaller or equal to its "
+        if self.age >= self.lifetime:
+            e4 = ("A unit's age must be smaller than its "
                   "expected lifetime.")
             raise AttributeError(e4)
 
@@ -299,3 +300,12 @@ class NonConvex:
             self._calculate_max_up_down()
 
         return self._max_up_down
+
+
+class MultiPeriodNonConvex(NonConvex):
+    """Class for MultiPeriodNonConvexFlows
+    Introduced to allow for grouping of Flows with both :attr:`multiperiod`
+    and :attr:`nonconvex` set. The attribute :attr:`multiperiod_nonconvex` is
+    used for this purpose.
+    """
+    pass

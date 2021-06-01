@@ -1,11 +1,7 @@
 # -*- coding: utf-8 -*-
 
-"""Classes used to model energy supply systems within solph.
-
-Classes are derived from oemof core network classes and adapted for specific
-optimization tasks. An energy system is modelled as a graph/network of nodes
-with very specific constraints on which types of nodes are allowed to be
-connected.
+"""
+solph version of oemof.network.Edge
 
 SPDX-FileCopyrightText: Uwe Krien <krien@uni-bremen.de>
 SPDX-FileCopyrightText: Simon Hilpert
@@ -20,42 +16,10 @@ SPDX-License-Identifier: MIT
 
 from warnings import warn
 
-from oemof.network import energy_system as es
 from oemof.network import network as on
 from oemof.tools import debugging
 
-# TODO: Change imports back!
-# from oemof.solph import blocks
-import blocks
 from oemof.solph.plumbing import sequence
-
-
-class EnergySystem(es.EnergySystem):
-    """A variant of :class:`EnergySystem
-    <oemof.core.energy_system.EnergySystem>` specially tailored to solph.
-
-    In order to work in tandem with solph, instances of this class always use
-    `solph.GROUPINGS <oemof.solph.GROUPINGS>`. If custom groupings are
-    supplied via the `groupings` keyword argument, `solph.GROUPINGS
-    <oemof.solph.GROUPINGS>` is prepended to those.
-
-    If you know what you are doing and want to use solph without
-    `solph.GROUPINGS <oemof.solph.GROUPINGS>`, you can just use
-    :class:`core's EnergySystem <oemof.core.energy_system.EnergySystem>`
-    directly.
-    """
-
-    def __init__(self, **kwargs):
-        # Doing imports at runtime is generally frowned upon, but should work
-        # for now. See the TODO in :func:`constraint_grouping
-        # <oemof.solph.groupings.constraint_grouping>` for more information.
-        # TODO: Change back imports
-        # from oemof.solph.groupings import GROUPINGS
-        from groupings import GROUPINGS
-
-        kwargs["groupings"] = GROUPINGS + kwargs.get("groupings", [])
-
-        super().__init__(**kwargs)
 
 
 class Flow(on.Edge):
@@ -146,12 +110,13 @@ class Flow(on.Edge):
     Notes
     -----
     The following sets, variables, constraints and objective parts are created
-     * :py:class:`~oemof.solph.blocks.Flow`
-     * :py:class:`~oemof.solph.blocks.InvestmentFlow` (additionally if
-       Investment object is present)
-     * :py:class:`~oemof.solph.blocks.NonConvexFlow` (If
-        nonconvex  object is present, CAUTION: replaces
-        :py:class:`~oemof.solph.blocks.Flow` class and a MILP will be build)
+     * :py:class:`~oemof.solph.blocks.flow.Flow`
+     * :py:class:`~oemof.solph.blocks.investment_flow.InvestmentFlow`
+        (additionally if Investment object is present)
+     * :py:class:`~oemof.solph.blocks.non_convex_flow.NonConvexFlow`
+        (If nonconvex  object is present, CAUTION: replaces
+        :py:class:`~oemof.solph.blocks.flow.Flow`
+        class and a MILP will be build)
 
     Examples
     --------
@@ -186,6 +151,7 @@ class Flow(on.Edge):
                    "multiperiod",
                    "multiperiodinvestment",
                    "nonconvex",
+                   "multiperiodnonconvex",
                    "integer"]
         sequences = ["fix", "variable_costs", "fixed_costs", "min", "max"]
         dictionaries = ["positive_gradient", "negative_gradient"]
@@ -196,7 +162,7 @@ class Flow(on.Edge):
         }
         keys = [k for k in kwargs if k != "label"]
 
-        if 'fixed_costs' in keys:
+        if "fixed_costs" in keys:
             msg = ("Be aware that the fixed costs attribute is only\n"
                    "meant to be used for MultiPeriodModels.\n"
                    "It has been decided to remove the `fixed_costs` "
@@ -253,18 +219,18 @@ class Flow(on.Edge):
 
         # Checking for impossible attribute combinations
         if ((self.investment or self.multiperiodinvestment)
-            and self.nominal_value is not None):
+                and self.nominal_value is not None):
             raise ValueError("Using the investment object the nominal_value"
                              " has to be set to None.")
         if ((self.investment or self.multiperiodinvestment)
-            and self.nonconvex):
-            raise ValueError("Investment flows cannot be combined with " +
+                and self.nonconvex):
+            raise ValueError("Investment flows cannot be combined with "
                              "nonconvex flows!")
         if self.investment and self.multiperiodinvestment:
             raise ValueError("Either use a standard investment flow for "
                              "standard investment models or a "
-                             "multiperiodinvestment flow for "
-                             "MultiPeriodModels.\n"
+                             "multiperiodinvestment flow "
+                             "for MultiPeriodModels.\n"
                              "Combining both is not feasible!")
         if self.multiperiod is True and self.multiperiodinvestment:
             raise ValueError("In a MultiPeriodModel, a flow can either "
@@ -274,160 +240,3 @@ class Flow(on.Edge):
                              "investments,\nwhen a `multiperiodinvestment` "
                              "object is declared.\nCombining both is not "
                              "feasible!")
-
-
-class Bus(on.Bus):
-    """A balance object. Every node has to be connected to Bus.
-
-    If a MultiPeriodModel is created, :attr:`multiperiod`
-    has to be set to True.
-
-    Notes
-    -----
-    The following sets, variables, constraints and objective parts are created
-     * :py:class:`~oemof.solph.blocks.Bus` for a standard model
-     * :py:class:`~oemof.solph.blocks.MultiPeriodBus` for a MultiPeriodModel
-
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.balanced = kwargs.get("balanced", True)
-        self.multiperiod = kwargs.get("multiperiod", False)
-
-    def constraint_group(self):
-        if self.balanced and not self.multiperiod:
-            return blocks.Bus
-        if self.balanced and self.multiperiod:
-            return blocks.MultiPeriodBus
-        else:
-            return None
-
-
-class Sink(on.Sink):
-    """An object with one input flow."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        check_node_object_for_missing_attribute(self, "inputs")
-
-    def constraint_group(self):
-        pass
-
-
-class Source(on.Source):
-    """An object with one output flow."""
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        check_node_object_for_missing_attribute(self, "outputs")
-
-    def constraint_group(self):
-        pass
-
-
-class Transformer(on.Transformer):
-    """A linear Transformer object with n inputs and n outputs.
-
-    For a MultiPeriodModel, the Flow output(s) should either have a
-    boolean attribute :attr:`multiperiod`, to indicate a transformer used in
-    the dispatch mode, or an attribute :attr:`multiperiodinvestment` of type
-    :class:`MultiPeriodInvestment <oemof.solph.options.MultiPeriodInvestment>`
-    for a transformer that will be invested in.
-
-    Parameters
-    ----------
-    conversion_factors : dict
-        Dictionary containing conversion factors for conversion of each flow.
-        Keys are the connected bus objects.
-        The dictionary values can either be a scalar or an iterable with length
-        of time horizon for simulation.
-
-    Examples
-    --------
-    Defining an linear transformer:
-
-    >>> from oemof import solph
-    >>> bgas = solph.Bus(label='natural_gas')
-    >>> bcoal = solph.Bus(label='hard_coal')
-    >>> bel = solph.Bus(label='electricity')
-    >>> bheat = solph.Bus(label='heat')
-
-    >>> trsf = solph.Transformer(
-    ...    label='pp_gas_1',
-    ...    inputs={bgas: solph.Flow(), bcoal: solph.Flow()},
-    ...    outputs={bel: solph.Flow(), bheat: solph.Flow()},
-    ...    conversion_factors={bel: 0.3, bheat: 0.5,
-    ...                        bgas: 0.8, bcoal: 0.2})
-    >>> print(sorted([x[1][5] for x in trsf.conversion_factors.items()]))
-    [0.2, 0.3, 0.5, 0.8]
-
-    >>> type(trsf)
-    <class 'oemof.solph.network.Transformer'>
-
-    >>> sorted([str(i) for i in trsf.inputs])
-    ['hard_coal', 'natural_gas']
-
-    >>> trsf_new = solph.Transformer(
-    ...    label='pp_gas_2',
-    ...    inputs={bgas: solph.Flow()},
-    ...    outputs={bel: solph.Flow(), bheat: solph.Flow()},
-    ...    conversion_factors={bel: 0.3, bheat: 0.5})
-    >>> trsf_new.conversion_factors[bgas][3]
-    1
-
-    Notes
-    -----
-    The following sets, variables, constraints and objective parts are created
-     * :py:class:`~oemof.solph.blocks.Transformer` for a standard model
-     * :py:class:`~oemof.solph.blocks.MultiPeriodTransformer` for a
-     MultiPeriodModel
-    """
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-        check_node_object_for_missing_attribute(self, "inputs")
-        check_node_object_for_missing_attribute(self, "outputs")
-
-        self.conversion_factors = {
-            k: sequence(v)
-            for k, v in kwargs.get("conversion_factors", {}).items()
-        }
-
-        missing_conversion_factor_keys = (
-            set(self.outputs) | set(self.inputs)
-        ) - set(self.conversion_factors)
-
-        for cf in missing_conversion_factor_keys:
-            self.conversion_factors[cf] = sequence(1)
-
-        # Check outputs for multiperiod modeling
-        for v in self.outputs.values():
-            if (hasattr(v, 'multiperiod')
-                or hasattr(v, 'multiperiodinvestment')):
-                if (v.multiperiod is not None
-                    or v.multiperiodinvestment is not None):
-                    self.multiperiod = True
-                    break
-                else:
-                    self.multiperiod = False
-
-    def constraint_group(self):
-        if not self.multiperiod:
-            return blocks.Transformer
-        else:
-            return blocks.MultiPeriodTransformer
-
-
-def check_node_object_for_missing_attribute(obj, attribute):
-    if not getattr(obj, attribute):
-        msg = (
-            "Attribute <{0}> is missing in Node <{1}> of {2}.\n"
-            "If this is intended and you know what you are doing you can"
-            "disable the SuspiciousUsageWarning globally."
-        )
-        warn(
-            msg.format(attribute, obj.label, type(obj)),
-            debugging.SuspiciousUsageWarning,
-        )

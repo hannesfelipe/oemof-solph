@@ -24,9 +24,7 @@ SPDX-License-Identifier: MIT
 
 from oemof.network import groupings as groupings
 
-# TODO: Change back imports!
-import blocks
-# from oemof.solph import blocks
+from oemof.solph import blocks
 
 
 def constraint_grouping(node, fallback=lambda *xs, **ks: None):
@@ -87,7 +85,6 @@ def _multiperiod_grouping(stf):
 
 multiperiod_flow_grouping = groupings.FlowsWithNodes(
     constant_key=blocks.MultiPeriodFlow,
-    # stf: a tuple consisting of (source, target, flow), so stf[2] is the flow.
     filter=_multiperiod_grouping)
 
 
@@ -101,7 +98,6 @@ def _multiperiodinvestment_grouping(stf):
 
 multiperiodinvestment_flow_grouping = groupings.FlowsWithNodes(
     constant_key=blocks.MultiPeriodInvestmentFlow,
-    # stf: a tuple consisting of (source, target, flow), so stf[2] is the flow.
     filter=_multiperiodinvestment_grouping)
 
 
@@ -118,6 +114,19 @@ nonconvex_flow_grouping = groupings.FlowsWithNodes(
 )
 
 
+def _multiperiod_nonconvex_grouping(stf):
+    if hasattr(stf[2], "multiperiodnonconvex"):
+        if stf[2].multiperiodnonconvex is not None:
+            return True
+    else:
+        return False
+
+
+multiperiod_nonconvex_flow_grouping = groupings.FlowsWithNodes(
+    constant_key=blocks.MultiPeriodNonConvexFlow,
+    filter=_multiperiod_nonconvex_grouping
+)
+
 GROUPINGS = [
     constraint_grouping,
     investment_flow_grouping,
@@ -125,4 +134,5 @@ GROUPINGS = [
     multiperiodinvestment_flow_grouping,
     standard_flow_grouping,
     nonconvex_flow_grouping,
+    multiperiod_nonconvex_flow_grouping
 ]
