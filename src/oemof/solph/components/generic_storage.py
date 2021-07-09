@@ -49,17 +49,14 @@ class GenericStorage(network.Node):
     ----------
     nominal_storage_capacity : numeric, :math:`E_{nom}`
         Absolute nominal capacity of the storage
-
     invest_relation_input_capacity : numeric or None, :math:`r_{cap,in}`
         Ratio between the investment variable of the input Flow and the
         investment variable of the storage:
         :math:`\dot{E}_{in,invest} = E_{invest} \cdot r_{cap,in}`
-
     invest_relation_output_capacity : numeric or None, :math:`r_{cap,out}`
         Ratio between the investment variable of the output Flow and the
         investment variable of the storage:
         :math:`\dot{E}_{out,invest} = E_{invest} \cdot r_{cap,out}`
-
     invest_relation_input_output : numeric or None, :math:`r_{in,out}`
         Ratio between the investment variable of the output Flow and the
         investment variable of the input flow. This ratio used to fix the
@@ -68,7 +65,6 @@ class GenericStorage(network.Node):
         set the input flow higher than the output flow. If None no relation
         will be set:
         :math:`\dot{E}_{in,invest} = \dot{E}_{out,invest} \cdot r_{in,out}`
-
     initial_storage_level : numeric, :math:`c(-1)`
         The relative storage content in the timestep before the first
         time step of optimization (between 0 and 1).
@@ -101,13 +97,12 @@ class GenericStorage(network.Node):
         nominal_storage_capacity should not be set (or set to None) if an
         investment object is used.
 
-    Note
-    ----
+    Notes
+    -----
     The following sets, variables, constraints and objective parts are created
      * :py:class:`~oemof.solph.components.generic_storage.GenericStorageBlock`
        (if no Investment object present)
-     * :py:class:
-       `~oemof.solph.components.generic_storage.GenericInvestmentStorageBlock`
+     * :py:class:`~oemof.solph.components.generic_storage.GenericInvestmentStorageBlock`
        (if Investment object present)
 
     Examples
@@ -141,7 +136,7 @@ class GenericStorage(network.Node):
     ...     invest_relation_output_capacity=1/6,
     ...     inflow_conversion_factor=1,
     ...     outflow_conversion_factor=0.8)
-    """
+    """  # noqa: E501
 
     def __init__(
         self, *args, max_storage_level=1, min_storage_level=0, **kwargs
@@ -179,16 +174,18 @@ class GenericStorage(network.Node):
             "invest_relation_output_capacity"
         )
         self._invest_group = isinstance(self.investment, Investment)
-        self.multiperiod = kwargs.get('multiperiod', False)
-        self.multiperiodinvestment = kwargs.get('multiperiodinvestment')
+        self.multiperiod = kwargs.get("multiperiod", False)
+        self.multiperiodinvestment = kwargs.get("multiperiodinvestment")
         self._multiperiodinvest_group = isinstance(
             self.multiperiodinvestment, MultiPeriodInvestment)
+        self.lifetime_inflow = kwargs.get("lifetime_inflow")
+        self.lifetime_outflow = kwargs.get("lifetime_outflow")
 
         # Check number of flows.
         self._check_number_of_flows()
 
         # Check attributes for the investment mode.
-        if self._invest_group is True:
+        if (self._invest_group or self._multiperiodinvest_group) is True:
             self._check_invest_attributes()
 
         # Check for old parameter names. This is a temporary fix and should
@@ -220,48 +217,93 @@ class GenericStorage(network.Node):
             raise AttributeError(message.format("\n  ".join(messages)))
 
     def _set_flows(self):
-        for flow in self.inputs.values():
-            if (
-                self.invest_relation_input_capacity is not None
-                and not isinstance(flow.investment, Investment)
-            ):
-                flow.investment = Investment()
-        for flow in self.outputs.values():
-            if (
-                self.invest_relation_output_capacity is not None
-                and not isinstance(flow.investment, Investment)
-            ):
-                flow.investment = Investment()
+        if self._invest_group:
+            for flow in self.inputs.values():
+                if (
+                    self.invest_relation_input_capacity is not None
+                    and not isinstance(flow.investment, Investment)
+                ):
+                    flow.investment = Investment()
+            for flow in self.outputs.values():
+                if (
+                    self.invest_relation_output_capacity is not None
+                    and not isinstance(flow.investment, Investment)
+                ):
+                    flow.investment = Investment()
+        else:
+            for flow in self.inputs.values():
+                if (
+                    self.invest_relation_input_capacity is not None
+                    and not isinstance(
+                        flow.multiperiodinvestment, MultiPeriodInvestment)
+                ):
+                    if self.lifetime_inflow is None:
+                        e1 = (
+                            "If you use multiperiod investment modeling, "
+                            "you have to specify a lifetime for potential "
+                            "investments in inflow capacity by setting the "
+                            "parameter **lifetime_inflow."
+                        )
+                        raise AttributeError(e1)
+                    flow.multiperiodinvestment = MultiPeriodInvestment(
+                        lifetime=self.lifetime_inflow
+                    )
+            for flow in self.outputs.values():
+                if (
+                    self.invest_relation_output_capacity is not None
+                    and not isinstance(
+                        flow.multiperiodinvestment, MultiPeriodInvestment)
+                ):
+                    if self.lifetime_inflow is None:
+                        e1 = (
+                            "If you use multiperiod investment modeling, "
+                            "you have to specify a lifetime for potential "
+                            "investments in outflow capacity by setting the "
+                            "parameter **lifetime_outflow."
+                        )
+                        raise AttributeError(e1)
+                    flow.multiperiodinvestment = MultiPeriodInvestment(
+                        lifetime=self.lifetime_outflow
+                    )
 
     def _check_invest_attributes(self):
-        if self.investment and self.nominal_storage_capacity is not None:
+        if self.investment and self.multiperiodinvestment is not None:
             e1 = (
+                "Either specify an investment attribute for a "
+                "standard investment model or a multiperiodinvestment "
+                "attribute for a MultiPeriodModel.\n"
+                "Doing both at the same time is not feasible."
+            )
+            raise AttributeError(e1)
+        if ((self.investment or self.multiperiodinvestment)
+                and self.nominal_storage_capacity is not None):
+            e2 = (
                 "If an investment object is defined the invest variable "
                 "replaces the nominal_storage_capacity.\n Therefore the "
                 "nominal_storage_capacity should be 'None'.\n"
             )
-            raise AttributeError(e1)
+            raise AttributeError(e2)
         if (
             self.invest_relation_input_output is not None
             and self.invest_relation_output_capacity is not None
             and self.invest_relation_input_capacity is not None
         ):
-            e2 = (
+            e3 = (
                 "Overdetermined. Three investment object will be coupled"
                 "with three constraints. Set one invest relation to 'None'."
             )
-            raise AttributeError(e2)
+            raise AttributeError(e3)
         if (
-            self.investment
+            (self.investment or self.multiperiodinvestment)
             and sum(solph_sequence(self.fixed_losses_absolute)) != 0
             and self.investment.existing == 0
             and self.investment.minimum == 0
         ):
-            e3 = (
+            e4 = (
                 "With fixed_losses_absolute > 0, either investment.existing "
                 "or investment.minimum has to be non-zero."
             )
-            raise AttributeError(e3)
+            raise AttributeError(e4)
 
         self._set_flows()
 
@@ -277,7 +319,7 @@ class GenericStorage(network.Node):
     def constraint_group(self):
         if self._invest_group is True:
             return GenericInvestmentStorageBlock
-        elif self._multiperiodinvest_group is True:
+        elif self._multiperiodinvest_group is True and not self.multiperiod:
             return GenericMultiPeriodInvestmentStorageBlock
         elif self._invest_group is False and not self.multiperiod:
             return GenericStorageBlock
@@ -302,7 +344,7 @@ class GenericStorageBlock(SimpleBlock):
          attr:`investment` of type :class:`.Investment`.
 
     STORAGES_BALANCED
-        A set of  all :class:`.Storage` objects, with 'balanced' attribute set
+        A set of  all :py:class:`~.GenericStorage` objects, with 'balanced' attribute set
         to True.
 
     STORAGES_WITH_INVEST_FLOW_REL
@@ -313,14 +355,14 @@ class GenericStorageBlock(SimpleBlock):
 
     storage_content
         Storage content for every storage and timestep. The value for the
-        storage content at the beginning is set by the parameter `initial_storage_level`
-        or not set if `initial_storage_level` is None.
+        storage content at the beginning is set by the parameter
+        `initial_storage_level` or not set if `initial_storage_level` is None.
         The variable of storage s and timestep t can be accessed by:
         `om.Storage.storage_content[s, t]`
 
     **The following constraints are created:**
 
-    Set storage_content of last time step to one at t=0 if :attr:`balanced == True`
+    Set storage_content of last time step to one at t=0 if balanced == True
         .. math::
             E(t_{last}) = &E(-1)
 
@@ -344,30 +386,30 @@ class GenericStorageBlock(SimpleBlock):
     =========================== ======================= =========
     symbol                      explanation             attribute
     =========================== ======================= =========
-    :math:`E(t)`                energy currently stored :py:obj:`storage_content`
-    :math:`E_{nom}`             nominal capacity of     :py:obj:`nominal_storage_capacity`
+    :math:`E(t)`                energy currently stored `storage_content`
+    :math:`E_{nom}`             nominal capacity of     `nominal_storage_capacity`
                                 the energy storage
-    :math:`c(-1)`               state before            :py:obj:`initial_storage_level`
+    :math:`c(-1)`               state before            `initial_storage_level`
                                 initial time step
-    :math:`c_{min}(t)`          minimum allowed storage :py:obj:`min_storage_level[t]`
-    :math:`c_{max}(t)`          maximum allowed storage :py:obj:`max_storage_level[t]`
-    :math:`\beta(t)`            fraction of lost energy :py:obj:`loss_rate[t]`
+    :math:`c_{min}(t)`          minimum allowed storage `min_storage_level[t]`
+    :math:`c_{max}(t)`          maximum allowed storage `max_storage_level[t]`
+    :math:`\beta(t)`            fraction of lost energy `loss_rate[t]`
                                 as share of
                                 :math:`E(t)`
                                 per time unit
-    :math:`\gamma(t)`           fixed loss of energy    :py:obj:`fixed_losses_relative[t]`
+    :math:`\gamma(t)`           fixed loss of energy    `fixed_losses_relative[t]`
                                 relative to
                                 :math:`E_{nom}` per
                                 time unit
-    :math:`\delta(t)`           absolute fixed loss     :py:obj:`fixed_losses_absolute[t]`
+    :math:`\delta(t)`           absolute fixed loss     `fixed_losses_absolute[t]`
                                 of energy per
                                 time unit
-    :math:`\dot{E}_i(t)`        energy flowing in       :py:obj:`inputs`
-    :math:`\dot{E}_o(t)`        energy flowing out      :py:obj:`outputs`
-    :math:`\eta_i(t)`           conversion factor       :py:obj:`inflow_conversion_factor[t]`
+    :math:`\dot{E}_i(t)`        energy flowing in       `inputs`
+    :math:`\dot{E}_o(t)`        energy flowing out      `outputs`
+    :math:`\eta_i(t)`           conversion factor       `inflow_conversion_factor[t]`
                                 (i.e. efficiency)
                                 when storing energy
-    :math:`\eta_o(t)`           conversion factor when  :py:obj:`outflow_conversion_factor[t]`
+    :math:`\eta_o(t)`           conversion factor when  `outflow_conversion_factor[t]`
                                 (i.e. efficiency)
                                 taking stored energy
     :math:`\tau(t)`             duration of time step
@@ -1034,19 +1076,19 @@ class GenericInvestmentStorageBlock(SimpleBlock):
         :header: "symbol", "attribute", "explanation"
         :widths: 1, 1, 1
 
-        ":math:`E_{exist}`", ":py:obj:`flows[i, o].investment.existing`", "
+        ":math:`E_{exist}`", "`flows[i, o].investment.existing`", "
         Existing storage capacity"
-        ":math:`E_{invest,min}`", ":py:obj:`flows[i, o].investment.minimum`", "
+        ":math:`E_{invest,min}`", "`flows[i, o].investment.minimum`", "
         Minimum investment value"
-        ":math:`E_{invest,max}`", ":py:obj:`flows[i, o].investment.maximum`", "
+        ":math:`E_{invest,max}`", "`flows[i, o].investment.maximum`", "
         Maximum investment value"
-        ":math:`P_{i,exist}`", ":py:obj:`flows[i[n], n].investment.existing`
+        ":math:`P_{i,exist}`", "`flows[i[n], n].investment.existing`
         ", "Existing inflow capacity"
-        ":math:`P_{o,exist}`", ":py:obj:`flows[n, o[n]].investment.existing`
+        ":math:`P_{o,exist}`", "`flows[n, o[n]].investment.existing`
         ", "Existing outlfow capacity"
-        ":math:`c_{invest,var}`", ":py:obj:`flows[i, o].investment.ep_costs`
+        ":math:`c_{invest,var}`", "`flows[i, o].investment.ep_costs`
         ", "Variable investment costs"
-        ":math:`c_{invest,fix}`", ":py:obj:`flows[i, o].investment.offset`", "
+        ":math:`c_{invest,fix}`", "`flows[i, o].investment.offset`", "
         Fix investment costs"
         ":math:`r_{cap,in}`", ":attr:`invest_relation_input_capacity`", "
         Relation of storage capacity and nominal inflow"
@@ -1054,21 +1096,21 @@ class GenericInvestmentStorageBlock(SimpleBlock):
         Relation of storage capacity and nominal outflow"
         ":math:`r_{in,out}`", ":attr:`invest_relation_input_output`", "
         Relation of nominal in- and outflow"
-        ":math:`\beta(t)`", ":py:obj:`loss_rate[t]`", "Fraction of lost energy
+        ":math:`\beta(t)`", "`loss_rate[t]`", "Fraction of lost energy
         as share of :math:`E(t)` per time unit"
-        ":math:`\gamma(t)`", ":py:obj:`fixed_losses_relative[t]`", "Fixed loss
+        ":math:`\gamma(t)`", "`fixed_losses_relative[t]`", "Fixed loss
         of energy relative to :math:`E_{invest} + E_{exist}` per time unit"
-        ":math:`\delta(t)`", ":py:obj:`fixed_losses_absolute[t]`", "Absolute
+        ":math:`\delta(t)`", "`fixed_losses_absolute[t]`", "Absolute
         fixed loss of energy per time unit"
-        ":math:`\eta_i(t)`", ":py:obj:`inflow_conversion_factor[t]`", "
+        ":math:`\eta_i(t)`", "`inflow_conversion_factor[t]`", "
         Conversion factor (i.e. efficiency) when storing energy"
-        ":math:`\eta_o(t)`", ":py:obj:`outflow_conversion_factor[t]`", "
+        ":math:`\eta_o(t)`", "`outflow_conversion_factor[t]`", "
         Conversion factor when (i.e. efficiency) taking stored energy"
-        ":math:`c(-1)`", ":py:obj:`initial_storage_level`", "Initial relativ
+        ":math:`c(-1)`", "`initial_storage_level`", "Initial relativ
         storage content (before timestep 0)"
-        ":math:`c_{max}`", ":py:obj:`flows[i, o].max[t]`", "Normed maximum
+        ":math:`c_{max}`", "`flows[i, o].max[t]`", "Normed maximum
         value of storage content"
-        ":math:`c_{min}`", ":py:obj:`flows[i, o].min[t]`", "Normed minimum
+        ":math:`c_{min}`", "`flows[i, o].min[t]`", "Normed minimum
         value of storage content"
         ":math:`\tau(t)`", "", "Duration of time step"
         ":math:`t_u`", "", "Time unit of losses :math:`\beta(t)`,
@@ -1082,7 +1124,7 @@ class GenericInvestmentStorageBlock(SimpleBlock):
         super().__init__(*args, **kwargs)
 
     def _create(self, group=None):
-        """"""
+        """ """
         m = self.parent_block()
         if group is None:
             return None
@@ -2103,7 +2145,7 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
             """
             expr = (
                 self.storage_content[n, t]
-                >= n.total[n, p]
+                >= self.total[n, p]
                 * n.min_storage_level[t]
             )
             return expr
@@ -2174,16 +2216,16 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
         def _overall_minimum_investflow_rule(block):
             """Rule definition for minimum overall investment
             in multiperiodinvestment case.
+
+            Note: This is only applicable for the last period
             """
             for n in self.OVERALL_MINIMUM_MULTIPERIODINVESTSTORAGES:
-                for p in m.PERIODS:
-                    expr = (n.multiperiodinvestment.overall_minimum
-                            <= self.total[n, p])
-                    self.overall_minimum.add((n, p), expr)
+                expr = (n.multiperiodinvestment.overall_minimum
+                        <= self.total[n, m.PERIODS[-1]])
+                self.overall_minimum.add(n, expr)
 
         self.overall_minimum = Constraint(
             self.OVERALL_MINIMUM_MULTIPERIODINVESTSTORAGES,
-            m.PERIODS,
             noruleinit=True)
         self.overall_minimum_build = BuildAction(
             rule=_overall_minimum_investflow_rule)
@@ -2195,6 +2237,7 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
 
         m = self.parent_block()
         investment_costs = 0
+        period_investment_costs = {p: 0 for p in m.PERIODS}
         fixed_costs = 0
 
         for n in self.CONVEX_MULTIPERIODINVESTSTORAGES:
@@ -2214,11 +2257,12 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
                     capex=n.multiperiodinvestment.ep_costs[p],
                     n=lifetime,
                     wacc=interest)
-                investment_costs += (
+                investment_costs_increment = (
                     self.invest[n, p] * annuity * lifetime
                     * ((1 + m.discount_rate) ** (-p))
                 )
-
+                investment_costs += investment_costs_increment
+                period_investment_costs[p] += investment_costs_increment
         for n in self.NON_CONVEX_MULTIPERIODINVESTSTORAGES:
             for p in m.PERIODS:
                 lifetime = n.multiperiodinvestment.lifetime
@@ -2237,12 +2281,14 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
                         capex=n.multiperiodinvestment.ep_costs[p],
                         n=lifetime,
                         wacc=interest)
-                    investment_costs += (
+                    investment_costs_increment = (
                         (self.invest[n, p] * annuity * lifetime
                          + self.invest_status[n, p]
                          * n.multiperiodinvestment.offset[p])
                         * ((1 + m.discount_rate) ** (-p))
                     )
+                    investment_costs += investment_costs_increment
+                    period_investment_costs[p] += investment_costs_increment
 
         for n in self.MULTIPERIODINVESTSTORAGES:
             if n.multiperiodinvestment.fixed_costs[0] is not None:
@@ -2258,5 +2304,6 @@ class GenericMultiPeriodInvestmentStorageBlock(SimpleBlock):
                     )
 
         self.investment_costs = investment_costs
+        self.period_investment_costs = period_investment_costs
         self.costs = Expression(expr=investment_costs + fixed_costs)
         return self.costs

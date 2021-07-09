@@ -115,7 +115,7 @@ class BaseModel(po.ConcreteModel):
             self._construct()
 
     def _construct(self):
-        """"""
+        """ """
         self._add_parent_block_sets()
         self._add_parent_block_variables()
         self._add_child_blocks()
@@ -289,7 +289,7 @@ class Model(BaseModel):
         super().__init__(energysystem, **kwargs)
 
     def _add_parent_block_sets(self):
-        """"""
+        """ """
         # set with all nodes
         self.NODES = po.Set(initialize=[n for n in self.es.nodes])
 
@@ -332,7 +332,7 @@ class Model(BaseModel):
         )
 
     def _add_parent_block_variables(self):
-        """"""
+        """ """
         self.flow = po.Var(self.FLOWS, self.TIMESTEPS, within=po.Reals)
 
         for (o, i) in self.FLOWS:
@@ -413,7 +413,8 @@ class MultiPeriodModel(BaseModel):
     CONSTRAINT_GROUPS = [blocks.MultiPeriodBus, blocks.MultiPeriodTransformer,
                          blocks.InvestmentFlow,
                          blocks.NonConvexFlow, blocks.MultiPeriodFlow,
-                         blocks.MultiPeriodInvestmentFlow]
+                         blocks.MultiPeriodInvestmentFlow,
+                         blocks.MultiPeriodNonConvexFlow]
 
     def __init__(self, energysystem, discount_rate=0.02, **kwargs):
         self.discount_rate = discount_rate
@@ -451,6 +452,12 @@ class MultiPeriodModel(BaseModel):
         self.PERIOD_TIMESTEPS = {a: range(int(len(self.TIMESTEPS)
                                               / len(self.PERIODS)))
                                  for a in self.PERIODS}
+
+        # (Re-)Map timesteps to periods
+        timesteps_in_period = {p: [] for p in self.PERIODS}
+        for p, t in self.TIMEINDEX:
+            timesteps_in_period[p].append(t)
+        self.TIMESTEPS_IN_PERIOD = timesteps_in_period
 
         # previous timesteps
         previous_timesteps = [x - 1 for x in self.TIMESTEPS]

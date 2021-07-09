@@ -15,6 +15,7 @@ from difflib import unified_diff
 from os import path as ospath
 
 import pandas as pd
+import pytest
 from nose.tools import assert_raises
 from nose.tools import eq_
 from oemof.network.network import Node
@@ -122,12 +123,12 @@ class TestsConstraintMultiperiod:
                     ):
                         for n in range(start, end):
                             lines[n] = (
-                                           "-"
-                                           if lines[n] and lines[n][0] == "+"
-                                           else "+"
-                                           if lines[n]
-                                           else lines[n]
-                                       ) + lines[n][1:]
+                                "-"
+                                if lines[n] and lines[n][0] == "+"
+                                else "+"
+                                if lines[n]
+                                else lines[n]
+                            ) + lines[n][1:]
                         lines[end] = "= " + lines[end][3:]
                     return lines
 
@@ -343,38 +344,39 @@ class TestsConstraintMultiperiod:
 
         self.compare_lp_files("storage_multiperiod.lp")
 
-    # TODO: Fix implementation and get test working!
-    # def test_storage_invest_1_multiperiod(self):
-    #     """All invest variables are coupled. The invest variables of the
-    #     Flows
-    #     will be created during the initialisation of the storage e.g. battery
-    #     """
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.components.GenericStorage(
-    #         label="storage1",
-    #         inputs={bel: solph.Flow(variable_costs=56,
-    #                                 multiperiod=True)},
-    #         outputs={bel: solph.Flow(variable_costs=24,
-    #                                  multiperiod=True)},
-    #         nominal_storage_capacity=None,
-    #         loss_rate=0.13,
-    #         max_storage_level=0.9,
-    #         min_storage_level=0.1,
-    #         invest_relation_input_capacity=1 / 6,
-    #         invest_relation_output_capacity=1 / 6,
-    #         inflow_conversion_factor=0.97,
-    #         outflow_conversion_factor=0.86,
-    #         multiperiodinvestment=solph.MultiPeriodInvestment(
-    #             ep_costs=145,
-    #             maximum=234,
-    #             lifetime=20,
-    #             age=10
-    #         ),
-    #     )
-    #
-    #     self.compare_lp_files("storage_invest_1_multiperiod.lp")
+    def test_storage_invest_1_multiperiod(self):
+        """All invest variables are coupled. The invest variables of the
+        Flows
+        will be created during the initialisation of the storage e.g. battery
+        """
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storage1",
+            inputs={bel: solph.Flow(variable_costs=56,
+                                    multiperiod=True)},
+            outputs={bel: solph.Flow(variable_costs=24,
+                                     multiperiod=True)},
+            nominal_storage_capacity=None,
+            loss_rate=0.13,
+            max_storage_level=0.9,
+            min_storage_level=0.1,
+            invest_relation_input_capacity=1 / 6,
+            invest_relation_output_capacity=1 / 6,
+            inflow_conversion_factor=0.97,
+            outflow_conversion_factor=0.86,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145,
+                maximum=234,
+                lifetime=20,
+                age=10
+            ),
+            lifetime_inflow=20,
+            lifetime_outflow=20,
+        )
+
+        self.compare_lp_files("storage_invest_1_multiperiod.lp")
 
     def test_storage_invest_2_multiperiod(self):
         """All can be free extended to their own cost."""
@@ -521,6 +523,18 @@ class TestsConstraintMultiperiod:
         )
         self.compare_lp_files("storage_invest_6_multiperiod.lp")
 
+    def test_generic_storage_infeasible_attrs_combination(self):
+        msg = "Infeasible combination of attributes\n"
+        bel = solph.Bus()
+        solph.GenericStorage(
+            label="storage11",
+            outputs={bel: solph.Flow(multiperiod=True)},
+            multiperiod=True,
+            multiperiodinvestment=solph.MultiPeriodInvestment(lifetime=5)
+        )
+        with pytest.raises(AttributeError, match=msg):
+            solph.MultiPeriodModel(self.energysystem)
+
     def test_storage_minimum_invest_multiperiod(self):
         """All invest variables are coupled. The invest variables of the Flows
         will be created during the initialisation of the storage e.g. battery
@@ -538,6 +552,44 @@ class TestsConstraintMultiperiod:
         )
 
         self.compare_lp_files("storage_invest_minimum_multiperiod.lp")
+
+    def test_storage_overall_maximum_invest_multiperiod(self):
+        """All invest variables are coupled. The invest variables of the Flows
+        will be created during the initialisation of the storage e.g. battery
+        """
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storage1",
+            inputs={bel: solph.Flow(multiperiod=True)},
+            outputs={bel: solph.Flow(multiperiod=True)},
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145, maximum=200, lifetime=20,
+                overall_maximum=500
+            ),
+        )
+
+        self.compare_lp_files("storage_invest_overall_maximum_multiperiod.lp")
+
+    def test_storage_overall_minimum_invest_multiperiod(self):
+        """All invest variables are coupled. The invest variables of the Flows
+        will be created during the initialisation of the storage e.g. battery
+        """
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storage1",
+            inputs={bel: solph.Flow(multiperiod=True)},
+            outputs={bel: solph.Flow(multiperiod=True)},
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145, maximum=200, lifetime=20,
+                overall_minimum=150
+            ),
+        )
+
+        self.compare_lp_files("storage_invest_overall_minimum_multiperiod.lp")
 
     def test_storage_unbalanced_multiperiod(self):
         """Testing a unbalanced storage (e.g. battery)."""
@@ -557,26 +609,28 @@ class TestsConstraintMultiperiod:
         )
         self.compare_lp_files("storage_unbalanced_multiperiod.lp")
 
-    # def test_storage_invest_unbalanced_multiperiod(self):
-    #     """Testing a unbalanced storage (e.g. battery)."""
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.components.GenericStorage(
-    #         label="storage1",
-    #         inputs={bel: solph.Flow(multiperiod=True)},
-    #         outputs={bel: solph.Flow(multiperiod=True)},
-    #         nominal_storage_capacity=None,
-    #         initial_storage_level=0.5,
-    #         balanced=False,
-    #         invest_relation_input_capacity=1,
-    #         invest_relation_output_capacity=1,
-    #         multiperiodinvestment=solph.MultiPeriodInvestment(
-    #             ep_costs=145,
-    #             lifetime=20
-    #         ),
-    #     )
-    #     self.compare_lp_files("storage_invest_unbalanced_multiperiod.lp")
+    def test_storage_invest_unbalanced_multiperiod(self):
+        """Testing a unbalanced storage (e.g. battery)."""
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storage1",
+            inputs={bel: solph.Flow(multiperiod=True)},
+            outputs={bel: solph.Flow(multiperiod=True)},
+            nominal_storage_capacity=None,
+            initial_storage_level=0.5,
+            balanced=False,
+            invest_relation_input_capacity=1,
+            invest_relation_output_capacity=1,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145,
+                lifetime=20
+            ),
+            lifetime_inflow=20,
+            lifetime_outflow=20
+        )
+        self.compare_lp_files("storage_invest_unbalanced_multiperiod.lp")
 
     def test_storage_fixed_losses_multiperiod(self):
         """"""
@@ -607,36 +661,38 @@ class TestsConstraintMultiperiod:
 
         self.compare_lp_files("storage_fixed_losses_multiperiod.lp")
 
-    # def test_storage_invest_1_fixed_losses_multiperiod(self):
-    #     """All invest variables are coupled. The invest variables of the
-    #     Flows
-    #     will be created during the initialisation of the storage e.g. battery
-    #     """
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.components.GenericStorage(
-    #         label="storage1",
-    #         inputs={bel: solph.Flow(variable_costs=56, multiperiod=True)},
-    #         outputs={bel: solph.Flow(variable_costs=24, multiperiod=True)},
-    #         nominal_storage_capacity=None,
-    #         loss_rate=0.13,
-    #         fixed_losses_relative=0.01,
-    #         fixed_losses_absolute=3,
-    #         max_storage_level=0.9,
-    #         min_storage_level=0.1,
-    #         invest_relation_input_capacity=1 / 6,
-    #         invest_relation_output_capacity=1 / 6,
-    #         inflow_conversion_factor=0.97,
-    #         outflow_conversion_factor=0.86,
-    #         multiperiodinvestment=solph.MultiPeriodInvestment(
-    #             ep_costs=145,
-    #             maximum=234,
-    #             lifetime=20
-    #         ),
-    #     )
-    #
-    #     self.compare_lp_files("storage_invest_1_fixed_losses_multiperiod.lp")
+    def test_storage_invest_1_fixed_losses_multiperiod(self):
+        """All invest variables are coupled. The invest variables of the
+        Flows
+        will be created during the initialisation of the storage e.g. battery
+        """
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storage1",
+            inputs={bel: solph.Flow(variable_costs=56, multiperiod=True)},
+            outputs={bel: solph.Flow(variable_costs=24, multiperiod=True)},
+            nominal_storage_capacity=None,
+            loss_rate=0.13,
+            fixed_losses_relative=0.01,
+            fixed_losses_absolute=3,
+            max_storage_level=0.9,
+            min_storage_level=0.1,
+            invest_relation_input_capacity=1 / 6,
+            invest_relation_output_capacity=1 / 6,
+            inflow_conversion_factor=0.97,
+            outflow_conversion_factor=0.86,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145,
+                maximum=234,
+                lifetime=20
+            ),
+            lifetime_inflow=20,
+            lifetime_outflow=20,
+        )
+
+        self.compare_lp_files("storage_invest_1_fixed_losses_multiperiod.lp")
 
     def test_transformer_multiperiod(self):
         """Constraint test of a LinearN1Transformer without Investment."""
@@ -820,6 +876,61 @@ class TestsConstraintMultiperiod:
 
         self.compare_lp_files("variable_chp_multiperiod.lp")
 
+    def test_multiperiodinvestment_fixed(self):
+        """"""
+        bus = solph.Bus(label="bus_1",
+                        multiperiod=True)
+
+        solph.Source(
+            label="source_0",
+            outputs={
+                bus: solph.Flow(fix=[1,2,3,4,5,6],
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=50,
+                        lifetime=20
+                    )
+                )
+            },
+        )
+        self.compare_lp_files("multiperiod_fix_investment.lp")
+
+    def test_multiperiodinvestment_min(self):
+        """"""
+        bus = solph.Bus(label="bus_1",
+                        multiperiod=True)
+
+        solph.Source(
+            label="source_0",
+            outputs={
+                bus: solph.Flow(min=[1,2,3,4,5,6],
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=50,
+                        lifetime=20
+                    )
+                )
+            },
+        )
+        self.compare_lp_files("multiperiod_min_investment.lp")
+
+    def test_multiperiodinvestment_overall_minimum(self):
+        """"""
+        bus = solph.Bus(label="bus_1",
+                        multiperiod=True)
+
+        solph.Source(
+            label="source_0",
+            outputs={
+                bus: solph.Flow(
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=50,
+                        lifetime=20,
+                        overall_minimum=100
+                    )
+                )
+            },
+        )
+        self.compare_lp_files("multiperiod_investment_overall_minimum.lp")
+
     def test_generic_minvest_limit_multiperiod(self):
         """"""
         bus = solph.Bus(label="bus_1",
@@ -909,64 +1020,102 @@ class TestsConstraintMultiperiod:
 
         self.compare_lp_files("emission_limit_multiperiod.lp", my_om=om)
 
-    # TODO: Fix this! There seems to be a grouping issue
-    # def test_flow_count_limit_multiperiod(self):
-    #     """"""
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.Source(
-    #         label="source1",
-    #         outputs={
-    #             bel: solph.Flow(
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(),
-    #                 nominal_value=100,
-    #                 emission_factor=[0.5, -1.0, 2.0, 0.5, -1.0, 2.0]
-    #             )
-    #         },
-    #     )
-    #     solph.Source(
-    #         label="source2",
-    #         outputs={
-    #             bel: solph.Flow(
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(),
-    #                 nominal_value=100,
-    #                 emission_factor=3.5
-    #             )
-    #         },
-    #     )
-    #
-    #     # Should be ignored because emission_factor is not defined.
-    #     solph.Source(
-    #         label="source3",
-    #         outputs={
-    #             bel: solph.Flow(
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(),
-    #                 nominal_value=100)
-    #         },
-    #     )
-    #
-    #     # Should be ignored because it is not NonConvex.
-    #     solph.Source(
-    #         label="source4",
-    #         outputs={
-    #             bel: solph.Flow(
-    #                 emission_factor=1.5,
-    #                 min=0.3,
-    #                 nominal_value=100,
-    #                 multiperiod=True
-    #             )
-    #         },
-    #     )
-    #
-    #     om = self.get_om()
-    #
-    #     # one of the two flows has to be active
-    #     solph.constraints.limit_active_flow_count_by_keyword(
-    #         om, "emission_factor", lower_limit=1, upper_limit=2
-    #     )
-    #
-    #     self.compare_lp_files("flow_count_limit_multiperiod.lp", my_om=om)
+    def test_emission_constraints_per_period_multiperiod(self):
+        """"""
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.Source(
+            label="source1",
+            outputs={
+                bel: solph.Flow(
+                    nominal_value=100,
+                    emission_factor=[0.5, -1.0, 2.0, 0.5, -1.0, 2.0],
+                    multiperiod=True
+                )},
+        )
+        solph.Source(
+            label="source2",
+            outputs={bel: solph.Flow(
+                nominal_value=100,
+                emission_factor=3.5,
+                multiperiod=True
+            )},
+        )
+
+        # Should be ignored because the emission attribute is not defined.
+        solph.Source(
+            label="source3",
+            outputs={bel: solph.Flow(
+                nominal_value=100,
+                multiperiod=True
+            )}
+        )
+
+        om = self.get_om()
+
+        solph.constraints.emission_limit_per_period(om, limit=[222, 333, 444])
+
+        self.compare_lp_files(
+            "emission_limit_per_period_multiperiod.lp", my_om=om)
+
+    def test_flow_count_limit_multiperiod(self):
+        """"""
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.Source(
+            label="source1",
+            outputs={
+                bel: solph.Flow(
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(),
+                    nominal_value=100,
+                    emission_factor=[0.5, -1.0, 2.0, 0.5, -1.0, 2.0]
+                )
+            },
+        )
+        solph.Source(
+            label="source2",
+            outputs={
+                bel: solph.Flow(
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(),
+                    nominal_value=100,
+                    emission_factor=3.5
+                )
+            },
+        )
+
+        # Should be ignored because emission_factor is not defined.
+        solph.Source(
+            label="source3",
+            outputs={
+                bel: solph.Flow(
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(),
+                    nominal_value=100)
+            },
+        )
+
+        # Should be ignored because it is not NonConvex.
+        solph.Source(
+            label="source4",
+            outputs={
+                bel: solph.Flow(
+                    emission_factor=1.5,
+                    min=0.3,
+                    nominal_value=100,
+                    multiperiod=True
+                )
+            },
+        )
+
+        om = self.get_om()
+
+        # one of the two flows has to be active
+        solph.constraints.limit_active_flow_count_by_keyword(
+            om, "emission_factor", lower_limit=1, upper_limit=2
+        )
+
+        self.compare_lp_files("flow_count_limit_multiperiod.lp", my_om=om)
 
     def test_shared_limit_multiperiod(self):
         """"""
@@ -1043,56 +1192,57 @@ class TestsConstraintMultiperiod:
 
         self.compare_lp_files("emission_limit_multiperiod_2.lp", my_om=om)
 
-    # TODO: Fix storage issue
-    # def test_equate_variables_constraint_multiperiod(self):
-    #     """Testing the equate_variables function in the constraint module."""
-    #     bus1 = solph.Bus(label="Bus1",
-    #                      multiperiod=True)
-    #     storage = solph.components.GenericStorage(
-    #         label="storage_constraint",
-    #         invest_relation_input_capacity=0.2,
-    #         invest_relation_output_capacity=0.2,
-    #         inputs={bus1: solph.Flow(multiperiod=True)},
-    #         outputs={bus1: solph.Flow(multiperiod=True)},
-    #         multiperiodinvestment=solph.MultiPeriodInvestment(
-    #             ep_costs=145,
-    #             lifetime=20
-    #         ),
-    #     )
-    #     sink = solph.Sink(
-    #         label="Sink",
-    #         inputs={
-    #             bus1: solph.Flow(
-    #                 multiperiodinvestment=solph.MultiPeriodInvestment(
-    #                     ep_costs=500,
-    #                     lifetime=100
-    #                 ))
-    #         },
-    #     )
-    #     source = solph.Source(
-    #         label="Source",
-    #         outputs={
-    #             bus1: solph.Flow(
-    #                 multiperiodinvestment=solph.MultiPeriodInvestment(
-    #                     ep_costs=123,
-    #                     lifetime=25
-    #                 ))
-    #         },
-    #     )
-    #     om = self.get_om()
-    #     solph.constraints.equate_variables(
-    #         om,
-    #         om.MultiPeriodInvestmentFlow.invest[source, bus1, 0],
-    #         om.MultiPeriodInvestmentFlow.invest[bus1, sink, 0],
-    #         2,
-    #     )
-    #     solph.constraints.equate_variables(
-    #         om,
-    #         om.MultiPeriodInvestmentFlow.invest[source, bus1, 0],
-    #         om.GenericMultiPeriodInvestmentStorageBlock.invest[storage, 0],
-    #     )
-    #
-    #     self.compare_lp_files("connect_investment_multiperiod.lp", my_om=om)
+    def test_equate_variables_constraint_multiperiod(self):
+        """Testing the equate_variables function in the constraint module."""
+        bus1 = solph.Bus(label="Bus1",
+                         multiperiod=True)
+        storage = solph.components.GenericStorage(
+            label="storage_constraint",
+            invest_relation_input_capacity=0.2,
+            invest_relation_output_capacity=0.2,
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            outputs={bus1: solph.Flow(multiperiod=True)},
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145,
+                lifetime=20
+            ),
+            lifetime_inflow=20,
+            lifetime_outflow=20
+        )
+        sink = solph.Sink(
+            label="Sink",
+            inputs={
+                bus1: solph.Flow(
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=500,
+                        lifetime=100
+                    ))
+            },
+        )
+        source = solph.Source(
+            label="Source",
+            outputs={
+                bus1: solph.Flow(
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=123,
+                        lifetime=25
+                    ))
+            },
+        )
+        om = self.get_om()
+        solph.constraints.equate_variables(
+            om,
+            om.MultiPeriodInvestmentFlow.invest[source, bus1, 0],
+            om.MultiPeriodInvestmentFlow.invest[bus1, sink, 0],
+            2,
+        )
+        solph.constraints.equate_variables(
+            om,
+            om.MultiPeriodInvestmentFlow.invest[source, bus1, 0],
+            om.GenericMultiPeriodInvestmentStorageBlock.invest[storage, 0],
+        )
+
+        self.compare_lp_files("connect_investment_multiperiod.lp", my_om=om)
 
     def test_integer_flow_multiperiod(self):
         """Testing forcing flows to integer values."""
@@ -1132,6 +1282,27 @@ class TestsConstraintMultiperiod:
         )
 
         self.compare_lp_files("source_with_gradient_multiperiod.lp")
+
+    def test_nonconvex_gradient_multiperiod(self):
+        """Testing gradient constraints and costs."""
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.Source(
+            label="powerplant",
+            outputs={
+                bel: solph.Flow(
+                    nominal_value=999,
+                    variable_costs=23,
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(
+                        positive_gradient={"ub": 0.03, "costs": 7},
+                        negative_gradient={"ub": 0.05, "costs": 8},
+                    ),
+                )
+            },
+        )
+
+        self.compare_lp_files("source_with_nonconvex_gradient_multiperiod.lp")
 
     def test_summed_max_min_multiperiod(self):
         """Testing summed max and summed min for convex multiperiod flows."""
@@ -1180,6 +1351,169 @@ class TestsConstraintMultiperiod:
 
         self.compare_lp_files("multiperiodinvestment_limit.lp", my_om=om)
 
+    def test_multiperiodinvestment_limit_for_all_invest_possibilites(self):
+        """Testing the investment_limit function in the constraint module."""
+        bus1 = solph.Bus(label="Bus1",
+                         multiperiod=True)
+        solph.components.GenericStorage(
+            label="storage_invest_limit",
+            invest_relation_input_capacity=0.2,
+            invest_relation_output_capacity=0.2,
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            outputs={bus1: solph.Flow(multiperiod=True)},
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145, lifetime=20),
+            lifetime_inflow=20,
+            lifetime_outflow=20,
+        )
+        solph.Source(
+            label="Source",
+            outputs={
+                bus1: solph.Flow(
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=123, lifetime=20))
+            },
+        )
+        solph.custom.SinkDSM(
+            label="demand_dsm_DIW",
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            demand=[1] * 6,
+            capacity_up=[0.5] * 6,
+            capacity_down=[0.5] * 6,
+            approach="DIW",
+            flex_share_up=1,
+            flex_share_down=1,
+            delay_time=1,
+            cost_dsm_down_shift=2,
+            shed_eligibility=False,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=100, existing=50, minimum=33, maximum=100,
+                lifetime=20
+            ),
+        )
+        solph.custom.SinkDSM(
+            label="demand_dsm_DLR",
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            demand=[1] * 6,
+            capacity_up=[0.5] * 6,
+            capacity_down=[0.5] * 6,
+            approach="DLR",
+            flex_share_up=1,
+            flex_share_down=1,
+            delay_time=2,
+            shift_time=1,
+            cost_dsm_down_shift=2,
+            shed_eligibility=False,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=100, existing=50, minimum=33, maximum=100,
+                lifetime=20
+            ),
+        )
+        solph.custom.SinkDSM(
+            label="demand_dsm_oemof",
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            demand=[1] * 6,
+            capacity_up=[0.5, 0.4, 0.5] * 2,
+            capacity_down=[0.5, 0.4, 0.5] * 2,
+            approach="oemof",
+            flex_share_up=1,
+            flex_share_down=1,
+            shift_interval=2,
+            cost_dsm_down_shift=2,
+            shed_eligibility=False,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=100, existing=50, minimum=33, maximum=100,
+                lifetime=20
+            ),
+        )
+        om = self.get_om()
+        solph.constraints.multiperiodinvestment_limit(om, limit=1000)
+
+        self.compare_lp_files(
+            "investment_limit_all_options_multiperiod.lp", my_om=om)
+
+    def test_multiperiodinvestment_limit_per_period_all_options(self):
+        """Testing the investment_limit function in the constraint module."""
+        bus1 = solph.Bus(label="Bus1",
+                         multiperiod=True)
+        solph.components.GenericStorage(
+            label="storage_invest_limit",
+            invest_relation_input_capacity=0.2,
+            invest_relation_output_capacity=0.2,
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            outputs={bus1: solph.Flow(multiperiod=True)},
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145, lifetime=20),
+            lifetime_inflow=20,
+            lifetime_outflow=20,
+        )
+        solph.Source(
+            label="Source",
+            outputs={
+                bus1: solph.Flow(
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=123, lifetime=20))
+            },
+        )
+        solph.custom.SinkDSM(
+            label="demand_dsm_DIW",
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            demand=[1] * 6,
+            capacity_up=[0.5] * 6,
+            capacity_down=[0.5] * 6,
+            approach="DIW",
+            flex_share_up=1,
+            flex_share_down=1,
+            delay_time=1,
+            cost_dsm_down_shift=2,
+            shed_eligibility=False,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=100, existing=50, minimum=33, maximum=100,
+                lifetime=20
+            ),
+        )
+        solph.custom.SinkDSM(
+            label="demand_dsm_DLR",
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            demand=[1] * 6,
+            capacity_up=[0.5] * 6,
+            capacity_down=[0.5] * 6,
+            approach="DLR",
+            flex_share_up=1,
+            flex_share_down=1,
+            delay_time=2,
+            shift_time=1,
+            cost_dsm_down_shift=2,
+            shed_eligibility=False,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=100, existing=50, minimum=33, maximum=100,
+                lifetime=20
+            ),
+        )
+        solph.custom.SinkDSM(
+            label="demand_dsm_oemof",
+            inputs={bus1: solph.Flow(multiperiod=True)},
+            demand=[1] * 6,
+            capacity_up=[0.5, 0.4, 0.5] * 2,
+            capacity_down=[0.5, 0.4, 0.5] * 2,
+            approach="oemof",
+            flex_share_up=1,
+            flex_share_down=1,
+            shift_interval=2,
+            cost_dsm_down_shift=2,
+            shed_eligibility=False,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=100, existing=50, minimum=33, maximum=100,
+                lifetime=20
+            ),
+        )
+        om = self.get_om()
+        solph.constraints.multiperiodinvestment_limit_per_period(
+            om, limit=[300, 400, 500])
+
+        self.compare_lp_files(
+            "investment_limit_per_period_all_options_multiperiod.lp", my_om=om)
+
     def test_summed_min_investment_multiperiod(self):
         """Testing summed min for investment flows"""
         bel = solph.Bus(label="electricityBus",
@@ -1206,49 +1540,72 @@ class TestsConstraintMultiperiod:
         self.compare_lp_files(
             "transformer_with_summed_min_investment_multiperiod.lp", my_om=om)
 
-    # TODO: Fix this one (see above; NonConvex for multiperiod models)
-    # def test_min_max_runtime_multiperiod(self):
-    #     """Testing min and max runtimes for nonconvex flows."""
-    #     bus_t = solph.Bus(label="Bus_T",
-    #                       multiperiod=True)
-    #     solph.Source(
-    #         label="cheap_plant_min_down_constraints",
-    #         outputs={
-    #             bus_t: solph.Flow(
-    #                 nominal_value=10,
-    #                 min=0.5,
-    #                 max=1.0,
-    #                 variable_costs=10,
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(
-    #                     minimum_downtime=4,
-    #                     minimum_uptime=2,
-    #                     initial_status=2,
-    #                     startup_costs=5,
-    #                     shutdown_costs=7,
-    #                 ),
-    #             )
-    #         },
-    #     )
-    #     self.compare_lp_files("min_max_runtime_multiperiod.lp")
+    def test_min_max_runtime_multiperiod(self):
+        """Testing min and max runtimes for nonconvex flows."""
+        bus_t = solph.Bus(label="Bus_T",
+                          multiperiod=True)
+        solph.Source(
+            label="cheap_plant_min_down_constraints",
+            outputs={
+                bus_t: solph.Flow(
+                    nominal_value=10,
+                    min=0.5,
+                    max=1.0,
+                    variable_costs=10,
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(
+                        minimum_downtime=4,
+                        minimum_uptime=2,
+                        initial_status=1,
+                        startup_costs=5,
+                        shutdown_costs=7,
+                    ),
+                )
+            },
+        )
+        self.compare_lp_files("min_max_runtime_multiperiod.lp")
 
-    # def test_activity_costs_multiperiod(self):
-    #     """Testing activity_costs attribute for nonconvex flows."""
-    #     bus_t = solph.Bus(label="Bus_C",
-    #                       multiperiod=True)
-    #     solph.Source(
-    #         label="cheap_plant_activity_costs",
-    #         outputs={
-    #             bus_t: solph.Flow(
-    #                 nominal_value=10,
-    #                 min=0.5,
-    #                 max=1.0,
-    #                 variable_costs=10,
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(
-    #                     activity_costs=2),
-    #             )
-    #         },
-    #     )
-    #     self.compare_lp_files("activity_costs_multiperiod.lp")
+    def test_min_max_runtime_multiperiod_2(self):
+        """Testing min and max runtimes for nonconvex flows."""
+        bus_t = solph.Bus(label="Bus_T",
+                          multiperiod=True)
+        solph.Source(
+            label="cheap_plant_min_down_constraints",
+            outputs={
+                bus_t: solph.Flow(
+                    nominal_value=10,
+                    min=0.5,
+                    max=1.0,
+                    variable_costs=10,
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(
+                        minimum_downtime=2,
+                        minimum_uptime=2,
+                        initial_status=1,
+                        startup_costs=5,
+                        shutdown_costs=7,
+                    ),
+                )
+            },
+        )
+        self.compare_lp_files("min_max_runtime_multiperiod_2.lp")
+
+    def test_activity_costs_multiperiod(self):
+        """Testing activity_costs attribute for nonconvex flows."""
+        bus_t = solph.Bus(label="Bus_C",
+                          multiperiod=True)
+        solph.Source(
+            label="cheap_plant_activity_costs",
+            outputs={
+                bus_t: solph.Flow(
+                    nominal_value=10,
+                    min=0.5,
+                    max=1.0,
+                    variable_costs=10,
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(
+                        activity_costs=2),
+                )
+            },
+        )
+        self.compare_lp_files("activity_costs_multiperiod.lp")
 
     def test_piecewise_linear_transformer_cc_multiperiod(self):
         """Testing PiecewiseLinearTransformer using CC formulation."""
@@ -1287,65 +1644,65 @@ class TestsConstraintMultiperiod:
         self.compare_lp_files(
             "piecewise_linear_transformer_dcc_multiperiod.lp")
 
-    # def test_maximum_startups_multiperiod(self):
-    #     """Testing maximum_startups attribute for nonconvex flows."""
-    #     bus_t = solph.Bus(label="Bus_C",
-    #                       multiperiod=True)
-    #     solph.Source(
-    #         label="cheap_plant_maximum_startups",
-    #         outputs={
-    #             bus_t: solph.Flow(
-    #                 nominal_value=10,
-    #                 min=0.5,
-    #                 max=1.0,
-    #                 variable_costs=10,
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(
-    #                     maximum_startups=2),
-    #             )
-    #         },
-    #     )
-    #     self.compare_lp_files("maximum_startups_multiperiod.lp")
+    def test_maximum_startups_multiperiod(self):
+        """Testing maximum_startups attribute for nonconvex flows."""
+        bus_t = solph.Bus(label="Bus_C",
+                          multiperiod=True)
+        solph.Source(
+            label="cheap_plant_maximum_startups",
+            outputs={
+                bus_t: solph.Flow(
+                    nominal_value=10,
+                    min=0.5,
+                    max=1.0,
+                    variable_costs=10,
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(
+                        maximum_startups=2),
+                )
+            },
+        )
+        self.compare_lp_files("maximum_startups_multiperiod.lp")
 
-    # def test_maximum_shutdowns_multiperiod(self):
-    #     """Testing maximum_shutdowns attribute for nonconvex flows."""
-    #     bus_t = solph.Bus(label="Bus_C",
-    #                       multiperiod=True)
-    #     solph.Source(
-    #         label="cheap_plant_maximum_shutdowns",
-    #         outputs={
-    #             bus_t: solph.Flow(
-    #                 nominal_value=10,
-    #                 min=0.5,
-    #                 max=1.0,
-    #                 variable_costs=10,
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(
-    #                     maximum_shutdowns=2),
-    #             )
-    #         },
-    #     )
-    #     self.compare_lp_files("maximum_shutdowns_multiperiod.lp")
+    def test_maximum_shutdowns_multiperiod(self):
+        """Testing maximum_shutdowns attribute for nonconvex flows."""
+        bus_t = solph.Bus(label="Bus_C",
+                          multiperiod=True)
+        solph.Source(
+            label="cheap_plant_maximum_shutdowns",
+            outputs={
+                bus_t: solph.Flow(
+                    nominal_value=10,
+                    min=0.5,
+                    max=1.0,
+                    variable_costs=10,
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(
+                        maximum_shutdowns=2),
+                )
+            },
+        )
+        self.compare_lp_files("maximum_shutdowns_multiperiod.lp")
 
-    # def test_offsettransformer(self):
-    #     """Constraint test of a OffsetTransformer."""
-    #     bgas = solph.Bus(label="gasBus",
-    #                      multiperiod=True)
-    #     bth = solph.Bus(label="thermalBus",
-    #                     multiperiod=True)
-    #
-    #     solph.components.OffsetTransformer(
-    #         label="gasboiler",
-    #         inputs={
-    #             bgas: solph.Flow(
-    #                 multiperiodnonconvex=solph.MultiPeriodNonConvex(),
-    #                 nominal_value=100,
-    #                 min=0.32,
-    #             )
-    #         },
-    #         outputs={bth: solph.Flow(multiperiod=True)},
-    #         coefficients=[-17, 0.9],
-    #     )
-    #
-    #     self.compare_lp_files("offsettransformer_multiperiod.lp")
+    def test_offsettransformer(self):
+        """Constraint test of a OffsetTransformer."""
+        bgas = solph.Bus(label="gasBus",
+                         multiperiod=True)
+        bth = solph.Bus(label="thermalBus",
+                        multiperiod=True)
+
+        solph.components.OffsetTransformer(
+            label="gasboiler",
+            inputs={
+                bgas: solph.Flow(
+                    multiperiodnonconvex=solph.MultiPeriodNonConvex(),
+                    nominal_value=100,
+                    min=0.32,
+                )
+            },
+            outputs={bth: solph.Flow(multiperiod=True)},
+            coefficients=[-17, 0.9],
+        )
+
+        self.compare_lp_files("offsettransformer_multiperiod.lp")
 
     def test_dsm_module_DIW_multiperiod(self):
         """Constraint test of SinkDSM with approach=DLR"""
@@ -1414,171 +1771,175 @@ class TestsConstraintMultiperiod:
         )
         self.compare_lp_files('dsm_module_oemof_multiperiod.lp')
 
-    # def test_nonconvex_investment_storage_without_offset_multiperiod(self):
-    #     """All invest variables are coupled. The invest variables of the
-    #     Flows
-    #     will be created during the initialisation of the storage e.g. battery
-    #     """
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.components.GenericStorage(
-    #         label="storage_non_convex",
-    #         inputs={bel: solph.Flow(variable_costs=56, multiperiod=True)},
-    #         outputs={bel: solph.Flow(variable_costs=24, multiperiod=True)},
-    #         nominal_storage_capacity=None,
-    #         loss_rate=0.13,
-    #         max_storage_level=0.9,
-    #         min_storage_level=0.1,
-    #         invest_relation_input_capacity=1 / 6,
-    #         invest_relation_output_capacity=1 / 6,
-    #         inflow_conversion_factor=0.97,
-    #         outflow_conversion_factor=0.86,
-    #         multiperiodinvestment=solph.MultiPeriodInvestment(
-    #             ep_costs=141, maximum=244, minimum=12, nonconvex=True,
-    #             lifetime=20
-    #         ),
-    #     )
-    #
-    #     self.compare_lp_files("storage_invest_without_offset_multiperiod.lp")
-    #
-    # def test_nonconvex_investment_storage_with_offset_multiperiod(self):
-    #     """All invest variables are coupled. The invest variables of the
-    #     Flows
-    #     will be created during the initialisation of the storage e.g. battery
-    #     """
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.components.GenericStorage(
-    #         label="storagenon_convex",
-    #         inputs={bel: solph.Flow(variable_costs=56, multiperiod=True)},
-    #         outputs={bel: solph.Flow(variable_costs=24, multiperiod=True)},
-    #         nominal_storage_capacity=None,
-    #         loss_rate=0.13,
-    #         max_storage_level=0.9,
-    #         min_storage_level=0.1,
-    #         invest_relation_input_capacity=1 / 6,
-    #         invest_relation_output_capacity=1 / 6,
-    #         inflow_conversion_factor=0.97,
-    #         outflow_conversion_factor=0.86,
-    #         multiperiodinvestment=solph.MultiPeriodInvestment(
-    #             ep_costs=145,
-    #             minimum=19,
-    #             offset=5,
-    #             nonconvex=True,
-    #             maximum=1454,
-    #             lifetime=20
-    #         ),
-    #     )
-    #
-    #     self.compare_lp_files("storage_invest_with_offset_multiperiod.lp")
-    #
-    # def test_nonconvex_invest_storage_all_nonconvex_multiperiod(self):
-    #     """All invest variables are free and nonconvex."""
-    #     b1 = solph.Bus(label="bus1",
-    #                    multiperiod=True)
-    #
-    #     solph.components.GenericStorage(
-    #         label="storage_all_nonconvex",
-    #         inputs={
-    #             b1: solph.Flow(
-    #                 multiperiodinvestment=solph.MultiPeriodInvestment(
-    #                     nonconvex=True,
-    #                     minimum=5,
-    #                     offset=10,
-    #                     maximum=30,
-    #                     ep_costs=10,
-    #                     lifetime=20
-    #                 )
-    #             )
-    #         },
-    #         outputs={
-    #             b1: solph.Flow(
-    #                 multiperiodinvestment=solph.MultiPeriodInvestment(
-    #                     nonconvex=True,
-    #                     minimum=8,
-    #                     offset=15,
-    #                     ep_costs=10,
-    #                     maximum=20,
-    #                     lifetime=20
-    #                 )
-    #             )
-    #         },
-    #         multiperiodinvestment=solph.MultiPeriodInvestment(
-    #             nonconvex=True, ep_costs=20, offset=30, minimum=20,
-    #             maximum=100, lifetime=20
-    #         ),
-    #     )
-    #
-    #     self.compare_lp_files("storage_invest_all_nonconvex_multiperiod.lp")
-    #
-    # def test_nonconvex_invest_sink_without_offset_multiperiod(self):
-    #     """Non convex invest flow without offset, with minimum."""
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.Sink(
-    #         label="sink_nonconvex_invest",
-    #         inputs={
-    #             bel: solph.Flow(
-    #                 summed_max=2.3,
-    #                 variable_costs=25,
-    #                 max=0.8,
-    #                 multiperiodinvestment=solph.MultiPeriodInvestment(
-    #                     ep_costs=500, minimum=15, nonconvex=True,
-    #                     maximum=172,
-    #                     lifetime=20
-    #                 ),
-    #             )
-    #         },
-    #     )
-    #     self.compare_lp_files("flow_invest_without_offset_multiperiod.lp")
-    #
-    # def test_nonconvex_invest_source_with_offset_multiperiod(self):
-    #     """Non convex invest flow with offset, with minimum."""
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.Source(
-    #         label="source_nonconvex_invest",
-    #         inputs={
-    #             bel: solph.Flow(
-    #                 summed_max=2.3,
-    #                 variable_costs=25,
-    #                 max=0.8,
-    #                 multiperiodinvestment=solph.MultiPeriodInvestment(
-    #                     ep_costs=500,
-    #                     minimum=15,
-    #                     maximum=20,
-    #                     offset=34,
-    #                     nonconvex=True,
-    #                     lifetime=20
-    #                 ),
-    #             )
-    #         },
-    #     )
-    #     self.compare_lp_files("flow_invest_with_offset_multiperiod.lp")
-    #
-    # def test_nonconvex_invest_source_with_offset_no_min_multiperiod(self):
-    #     """Non convex invest flow with offset, without minimum."""
-    #     bel = solph.Bus(label="electricityBus",
-    #                     multiperiod=True)
-    #
-    #     solph.Source(
-    #         label="source_nonconvex_invest",
-    #         inputs={
-    #             bel: solph.Flow(
-    #                 summed_max=2.3,
-    #                 variable_costs=25,
-    #                 max=0.8,
-    #                 multiperiodinvestment=solph.MultiPeriodInvestment(
-    #                     ep_costs=500, maximum=1234, offset=34,
-    #                     nonconvex=True,
-    #                     lifetime=20
-    #                 ),
-    #             )
-    #         },
-    #     )
-    #     self.compare_lp_files(
-    #         "flow_invest_with_offset_no_minimum_multiperiod.lp")
+    def test_nonconvex_investment_storage_without_offset_multiperiod(self):
+        """All invest variables are coupled. The invest variables of the
+        Flows
+        will be created during the initialisation of the storage e.g. battery
+        """
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storage_non_convex",
+            inputs={bel: solph.Flow(variable_costs=56, multiperiod=True)},
+            outputs={bel: solph.Flow(variable_costs=24, multiperiod=True)},
+            nominal_storage_capacity=None,
+            loss_rate=0.13,
+            max_storage_level=0.9,
+            min_storage_level=0.1,
+            invest_relation_input_capacity=1 / 6,
+            invest_relation_output_capacity=1 / 6,
+            inflow_conversion_factor=0.97,
+            outflow_conversion_factor=0.86,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=141, maximum=244, minimum=12, nonconvex=True,
+                lifetime=20
+            ),
+            lifetime_inflow=20,
+            lifetime_outflow=20
+        )
+
+        self.compare_lp_files("storage_invest_without_offset_multiperiod.lp")
+
+    def test_nonconvex_investment_storage_with_offset_multiperiod(self):
+        """All invest variables are coupled. The invest variables of the
+        Flows
+        will be created during the initialisation of the storage e.g. battery
+        """
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storagenon_convex",
+            inputs={bel: solph.Flow(variable_costs=56, multiperiod=True)},
+            outputs={bel: solph.Flow(variable_costs=24, multiperiod=True)},
+            nominal_storage_capacity=None,
+            loss_rate=0.13,
+            max_storage_level=0.9,
+            min_storage_level=0.1,
+            invest_relation_input_capacity=1 / 6,
+            invest_relation_output_capacity=1 / 6,
+            inflow_conversion_factor=0.97,
+            outflow_conversion_factor=0.86,
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                ep_costs=145,
+                minimum=19,
+                offset=5,
+                nonconvex=True,
+                maximum=1454,
+                lifetime=20
+            ),
+            lifetime_inflow=20,
+            lifetime_outflow=20
+        )
+
+        self.compare_lp_files("storage_invest_with_offset_multiperiod.lp")
+
+    def test_nonconvex_invest_storage_all_nonconvex_multiperiod(self):
+        """All invest variables are free and nonconvex."""
+        b1 = solph.Bus(label="bus1",
+                       multiperiod=True)
+
+        solph.components.GenericStorage(
+            label="storage_all_nonconvex",
+            inputs={
+                b1: solph.Flow(
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        nonconvex=True,
+                        minimum=5,
+                        offset=10,
+                        maximum=30,
+                        ep_costs=10,
+                        lifetime=20
+                    )
+                )
+            },
+            outputs={
+                b1: solph.Flow(
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        nonconvex=True,
+                        minimum=8,
+                        offset=15,
+                        ep_costs=10,
+                        maximum=20,
+                        lifetime=20
+                    )
+                )
+            },
+            multiperiodinvestment=solph.MultiPeriodInvestment(
+                nonconvex=True, ep_costs=20, offset=30, minimum=20,
+                maximum=100, lifetime=20
+            ),
+        )
+
+        self.compare_lp_files("storage_invest_all_nonconvex_multiperiod.lp")
+
+    def test_nonconvex_invest_sink_without_offset_multiperiod(self):
+        """Non convex invest flow without offset, with minimum."""
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.Sink(
+            label="sink_nonconvex_invest",
+            inputs={
+                bel: solph.Flow(
+                    summed_max=2.3,
+                    variable_costs=25,
+                    max=0.8,
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=500, minimum=15, nonconvex=True,
+                        maximum=172,
+                        lifetime=20
+                    ),
+                )
+            },
+        )
+        self.compare_lp_files("flow_invest_without_offset_multiperiod.lp")
+
+    def test_nonconvex_invest_source_with_offset_multiperiod(self):
+        """Non convex invest flow with offset, with minimum."""
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.Source(
+            label="source_nonconvex_invest",
+            inputs={
+                bel: solph.Flow(
+                    summed_max=2.3,
+                    variable_costs=25,
+                    max=0.8,
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=500,
+                        minimum=15,
+                        maximum=20,
+                        offset=34,
+                        nonconvex=True,
+                        lifetime=20
+                    ),
+                )
+            },
+        )
+        self.compare_lp_files("flow_invest_with_offset_multiperiod.lp")
+
+    def test_nonconvex_invest_source_with_offset_no_min_multiperiod(self):
+        """Non convex invest flow with offset, without minimum."""
+        bel = solph.Bus(label="electricityBus",
+                        multiperiod=True)
+
+        solph.Source(
+            label="source_nonconvex_invest",
+            inputs={
+                bel: solph.Flow(
+                    summed_max=2.3,
+                    variable_costs=25,
+                    max=0.8,
+                    multiperiodinvestment=solph.MultiPeriodInvestment(
+                        ep_costs=500, maximum=1234, offset=34,
+                        nonconvex=True,
+                        lifetime=20
+                    ),
+                )
+            },
+        )
+        self.compare_lp_files(
+            "flow_invest_with_offset_no_minimum_multiperiod.lp")
